@@ -1,6 +1,6 @@
-# TSM25 — Sistema de producción
+# Sistema de producción
 
-TSM25 es el MES interno de Top Solution Metal. Centraliza órdenes de trabajo,
+MES interno de Top Solution Metal. Centraliza órdenes de trabajo,
 packing lists, elementos, avances de fabricación, bitácora y reportes
 fotográficos almacenados en Google Drive.
 
