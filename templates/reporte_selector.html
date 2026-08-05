@@ -18,7 +18,7 @@
 
 {% if can_generate %}
 <div id="confirm-modal" class="fixed inset-0 bg-slate-950/70 z-[9999] hidden flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 transform scale-95 transition-transform duration-300" id="confirm-box">
+    <div class="tsm-modal-card bg-white rounded-xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 transform scale-95 transition-transform duration-300" id="confirm-box">
         <div class="flex items-center gap-3 text-amber-600 mb-2">
             <span class="material-symbols-rounded text-2xl">warning</span>
             <h3 class="text-md font-black text-slate-900 uppercase tracking-tight">¿Confirmar Acción?</h3>
@@ -106,16 +106,16 @@
                 <div class="w-px h-6 bg-slate-200 mx-1"></div>
                 {% endif %}
 
-                <button type="button" id="btn-sync" onclick="sincronizarDrive()" class="w-9 h-9 flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Sincronizar Drive">
+                <button type="button" id="btn-sync" onclick="sincronizarDrive()" class="tsm-icon-button tsm-icon-button-success" title="Sincronizar Drive">
                     <span id="sync-icon" class="material-symbols-rounded text-[22px]">cloud_sync</span>
                 </button>
 
                 {% if can_generate %}
-                <button type="button" onclick="limpiarTodoClick()" class="w-9 h-9 flex items-center justify-center text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Limpiar selección">
+                <button type="button" onclick="limpiarTodoClick()" class="tsm-icon-button tsm-icon-button-warning" title="Limpiar selección">
                     <span class="material-symbols-rounded text-[22px]">delete_sweep</span>
                 </button>
 
-                <button type="button" onclick="abrirReporte(event)" class="w-9 h-9 flex items-center justify-center text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Generar PDF" id="btn-generar">
+                <button type="button" onclick="abrirReporte(event)" class="tsm-icon-button tsm-icon-button-danger" title="Generar PDF" id="btn-generar">
                     <span class="material-symbols-rounded text-[22px]">picture_as_pdf</span>
                 </button>
                 {% endif %}

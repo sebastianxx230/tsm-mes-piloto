@@ -1,5 +1,8 @@
 ﻿.tracking-document-list {
+    display: flex;
     min-height: 270px;
+    flex-direction: column;
+    justify-content: center;
     padding: 22px;
     background: #f8fafc;
 }
@@ -116,10 +119,13 @@
 
 .tracking-document-empty {
     display: flex;
+    width: 100%;
     min-height: 225px;
+    box-sizing: border-box;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    margin: 0 auto;
     text-align: center;
 }
 

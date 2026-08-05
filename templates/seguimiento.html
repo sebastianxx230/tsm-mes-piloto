@@ -5,8 +5,8 @@
 
 {% block head_extra %}
 <meta name="referrer" content="no-referrer">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=6.4.1">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=1.2.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=6.5.2">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=1.2.1">
 {% endblock %}
 
 {% block content %}
@@ -319,9 +319,8 @@
                 <div class="tracking-drawer-title">
                     <span class="tracking-drawer-icon material-symbols-rounded" aria-hidden="true">forum</span>
                     <div>
-                        <p class="tracking-section-kicker">Actividad de la orden</p>
-                        <h2 id="tracking-activity-title">Mensajes y actividad</h2>
-                        <span>OT {{ ot.ot }}</span>
+                        <h2 id="tracking-activity-title">Actividad de la OT</h2>
+                        <span>Mensajes e historial · {{ ot.ot }}</span>
                     </div>
                 </div>
                 <button type="button" class="tracking-icon-button" data-close-activity aria-label="Cerrar actividad">
@@ -350,7 +349,7 @@
                     </div>
                     <div class="tracking-activity-list" id="tracking-message-list">
                         {% for message in tracking.manual_messages %}
-                        <article class="tracking-activity-entry tracking-message-entry">
+                        <article class="tracking-activity-entry tracking-message-entry{% if message.usuario_id == current_user.id %} is-current-user{% endif %}">
                             <span class="tracking-activity-avatar">{{ (message.usuario_nombre or 'Usuario')[:2]|upper }}</span>
                             <div class="tracking-activity-copy">
                                 <div class="tracking-activity-meta"><strong>{{ message.usuario_nombre or 'Usuario' }}</strong><time>{{ message.fecha }}</time></div>
@@ -364,6 +363,10 @@
                 </section>
 
                 <section class="tracking-activity-pane" id="tracking-history-pane" role="tabpanel" aria-labelledby="tracking-history-tab" hidden>
+                    <div class="tracking-readonly-note">
+                        <span class="material-symbols-rounded" aria-hidden="true">history</span>
+                        <span>Registro automático de cambios</span>
+                    </div>
                     <div class="tracking-activity-list tracking-audit-list" id="tracking-audit-list">
                         {% for event in tracking.audit_events %}
                         <article class="tracking-activity-entry tracking-audit-entry">
@@ -541,10 +544,11 @@
     documentCandidatesUrlTemplate: {{ url_for('documentos_seguimiento_bp.listar_candidatos', ot_id=ot.item, category='__CATEGORY__')|tojson }},
     saveDocumentUrlTemplate: {{ url_for('documentos_seguimiento_bp.guardar_documento', ot_id=ot.item, category='__CATEGORY__')|tojson }},
     canManageDocuments: {% if current_user.rol == 'admin' %}true{% else %}false{% endif %},
+    currentUserId: {{ current_user.id|tojson }},
     csrfToken: {{ csrf_token()|tojson }},
     initialData: {{ tracking|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=6.5.0"></script>
+<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=6.5.2"></script>
 <script src="{{ url_for('static', filename='js/seguimiento_documentos.js') }}?v=1.2.0"></script>
 {% endblock %}

@@ -3663,3 +3663,177 @@ body.tracking-overlay-open {
         font-size: 9.5px;
     }
 }
+
+/* Actividad compacta y coherente con la mensajeria de Produccion. */
+.tracking-page {
+    max-width: 1500px;
+}
+
+.tracking-drawer-header {
+    min-height: 62px;
+    padding: 10px 12px 10px 15px;
+}
+
+.tracking-drawer-title {
+    gap: 8px;
+}
+
+.tracking-drawer-icon {
+    width: 25px;
+    height: 25px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #bfdbfe;
+}
+
+.tracking-drawer-icon.material-symbols-rounded {
+    font-size: 19px;
+}
+
+.tracking-drawer-title h2 {
+    margin: 0;
+    font-size: 14px;
+    letter-spacing: -0.01em;
+}
+
+.tracking-drawer-title > div > span {
+    margin-top: 2px;
+    color: #a8b6ca;
+    font-size: 9px;
+}
+
+.tracking-drawer-header .tracking-icon-button {
+    width: 30px;
+    height: 30px;
+}
+
+.tracking-activity-tabs {
+    min-height: 42px;
+}
+
+.tracking-activity-pane {
+    padding: 12px 16px 18px;
+    background: #f8fafc;
+}
+
+.tracking-readonly-note {
+    width: auto;
+    min-height: 20px;
+    justify-content: flex-start;
+    margin: 0 0 6px;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #64748b;
+    font-size: 9px;
+    box-shadow: none;
+}
+
+.tracking-activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.tracking-message-entry,
+.tracking-audit-entry,
+.tracking-activity-entry {
+    align-items: flex-start;
+    gap: 10px;
+    box-shadow: none;
+}
+
+.tracking-message-entry {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0 12px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+.tracking-message-entry .tracking-activity-avatar {
+    display: none;
+}
+
+.tracking-message-entry .tracking-activity-copy {
+    width: auto;
+    max-width: 86%;
+}
+
+.tracking-message-entry .tracking-activity-meta {
+    gap: 8px;
+    padding: 0 3px;
+}
+
+.tracking-message-entry .tracking-activity-copy > p {
+    margin-top: 4px !important;
+    padding: 8px 11px;
+    border: 1px solid #dbe3ed;
+    border-radius: 10px 10px 10px 3px;
+    background: #ffffff;
+    color: #334155;
+    font-size: 11px;
+    line-height: 1.45;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.tracking-message-entry.is-current-user {
+    align-items: flex-end;
+}
+
+.tracking-message-entry.is-current-user .tracking-activity-meta {
+    justify-content: flex-end;
+}
+
+.tracking-message-entry.is-current-user .tracking-activity-copy > p {
+    border-color: #2563eb;
+    border-radius: 10px 10px 3px 10px;
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.tracking-audit-entry {
+    display: flex;
+    padding: 12px 0;
+    border: 0;
+    border-bottom: 1px solid #e2e8f0;
+    border-radius: 0;
+    background: transparent;
+}
+
+.tracking-audit-entry:last-child {
+    border-bottom: 0;
+}
+
+.tracking-activity-avatar,
+.tracking-activity-marker {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 6px;
+}
+
+.tracking-activity-avatar {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.tracking-activity-marker {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+.tracking-activity-meta strong {
+    color: #1e293b;
+    font-size: 10.5px;
+}
+
+.tracking-audit-entry .tracking-activity-copy > p {
+    margin-top: 5px !important;
+    color: #475569;
+    font-size: 10px;
+    line-height: 1.5;
+}

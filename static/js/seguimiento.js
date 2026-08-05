@@ -3,6 +3,7 @@
 
     const config = window.TrackingConfig || {};
     const refreshIntervalMs = Math.max(Number(config.refreshIntervalMs || 15000), 10000);
+    const currentUserId = String(config.currentUserId || '');
     const initialData = config.initialData && typeof config.initialData === 'object'
         ? config.initialData
         : {};
@@ -461,7 +462,12 @@
         safeMessages.forEach((message) => {
             const author = message.usuario_nombre || 'Usuario';
             previousGroup = appendDateSeparator(fragment, message.fecha, previousGroup);
-            const article = element('article', 'tracking-activity-entry tracking-message-entry');
+            const isCurrentUser = currentUserId
+                && String(message.usuario_id || '') === currentUserId;
+            const article = element(
+                'article',
+                `tracking-activity-entry tracking-message-entry${isCurrentUser ? ' is-current-user' : ''}`,
+            );
             const copy = element('div', 'tracking-activity-copy');
             const meta = element('div', 'tracking-activity-meta');
 

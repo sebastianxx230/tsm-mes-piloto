@@ -15,7 +15,7 @@
 
 {% if can_edit %}
 <div id="modal-nuevo-pl" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-200">
-    <div class="bg-white border border-slate-200 rounded-xl max-w-sm w-full shadow-2xl transform scale-95 transition-all duration-200 overflow-hidden" id="box-nuevo-pl">
+    <div class="tsm-modal-card bg-white border border-slate-200 rounded-xl max-w-sm w-full shadow-2xl transform scale-95 transition-all duration-200 overflow-hidden" id="box-nuevo-pl">
         <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
             <h3 class="font-black text-[14px] text-slate-800 tracking-tight">Nueva Lista de Empaque</h3>
             <button onclick="cerrarModalPL('modal-nuevo-pl', 'box-nuevo-pl')" class="text-slate-400 hover:text-red-600 transition-colors"><span class="material-symbols-rounded block text-[20px]">close</span></button>
@@ -34,7 +34,7 @@
 
 {% if current_user.rol == 'admin' %}
 <div id="modal-renombrar-pl" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-200">
-    <div class="bg-white border border-slate-200 rounded-xl max-w-sm w-full shadow-2xl transform scale-95 transition-all duration-200 overflow-hidden" id="box-renombrar-pl">
+    <div class="tsm-modal-card bg-white border border-slate-200 rounded-xl max-w-sm w-full shadow-2xl transform scale-95 transition-all duration-200 overflow-hidden" id="box-renombrar-pl">
         <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
             <h3 class="font-black text-[14px] text-slate-800 tracking-tight">Renombrar Lista de Empaque</h3>
             <button onclick="cerrarModalPL('modal-renombrar-pl', 'box-renombrar-pl')" class="text-slate-400 hover:text-red-600 transition-colors"><span class="material-symbols-rounded block text-[20px]">close</span></button>
@@ -285,16 +285,16 @@
                     {% endif %}
 
                     {% if current_user.rol == 'admin' %}
-                    <button type="button" onclick="prepararRenombrarPL()" class="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border border-blue-200 bg-white text-blue-700 shadow-sm transition-colors hover:bg-blue-700 hover:text-white" title="Renombrar pestaña">
+                    <button type="button" onclick="prepararRenombrarPL()" class="tsm-icon-button shrink-0" title="Renombrar pestaña">
                         <span class="material-symbols-rounded text-[18px]">edit</span>
                     </button>
-                    <button type="button" onclick="eliminarMatrizActual()" class="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border border-red-200 bg-white text-red-600 shadow-sm transition-colors hover:bg-red-600 hover:text-white" title="Archivar packing list">
+                    <button type="button" onclick="eliminarMatrizActual()" class="tsm-icon-button tsm-icon-button-danger shrink-0" title="Archivar packing list">
                         <span class="material-symbols-rounded text-[18px]">archive</span>
                     </button>
                     {% endif %}
 
                     <div class="w-px h-5 bg-slate-200 mx-1 hidden md:block shrink-0"></div>
-                    <button type="button" onclick="toggleFullscreen()" id="btn-fullscreen" class="hidden h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-100 hover:text-slate-800 md:flex"><span class="material-symbols-rounded text-[18px]" id="icon-fullscreen">fullscreen</span></button>
+                    <button type="button" onclick="toggleFullscreen()" id="btn-fullscreen" class="tsm-icon-button hidden shrink-0 md:flex"><span class="material-symbols-rounded text-[18px]" id="icon-fullscreen">fullscreen</span></button>
                 </div>
             </div>
 
