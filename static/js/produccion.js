@@ -1705,11 +1705,6 @@ function toggleChat() {
 function prepararHistorialMensajes(history, hasMessages) {
     history.replaceChildren();
 
-    const divider = document.createElement('div');
-    divider.className = 'production-chat-divider';
-    divider.textContent = `OT ${window.ProduccionConfig.otOt} · coordinación operativa`;
-    history.appendChild(divider);
-
     if (!hasMessages) {
         const empty = document.createElement('div');
         empty.className = 'production-chat-empty';
@@ -1719,7 +1714,7 @@ function prepararHistorialMensajes(history, hasMessages) {
         const title = document.createElement('strong');
         title.textContent = 'Sin mensajes todavía';
         const copy = document.createElement('span');
-        copy.textContent = 'Registra aquí coordinaciones breves que deban quedar asociadas a esta OT.';
+        copy.textContent = 'Los mensajes de esta orden aparecerán aquí.';
         empty.append(icon, title, copy);
         history.appendChild(empty);
     }

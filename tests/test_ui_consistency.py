@@ -58,9 +58,15 @@ def test_production_header_chat_and_matrix_share_stable_layout_contracts():
     assert 'production-header-actions' in production_template
     assert 'production-header-button' in production_template
     assert 'production-chat-drawer' in production_template
-    assert 'production-chat-context' in production_template
+    assert 'production-chat-context' not in production_template
+    assert 'Canal operativo' not in production_template
+    assert 'Mensajes de la OT' not in production_template
+    assert 'precision_manufacturing' not in production_template
     assert 'Inicio de Mensajer' not in production_script
+    assert 'coordinación operativa' not in production_script
     assert 'production-chat-message' in production_script
+    assert 'background: transparent;' in production_css
+    assert 'backdrop-filter: none;' in production_css
 
     assert '--matrix-frozen-width: 420px;' in production_css
     assert '.sticky-c5 {' in production_css
@@ -79,6 +85,9 @@ def test_messages_and_history_share_the_same_surface_components():
     tracking_css = read('static/css/seguimiento.css')
 
     assert tracking_template.count('class="tracking-readonly-note"') == 2
+    assert 'precision_manufacturing' not in tracking_template
+    assert '<h2 id="tracking-activity-title">Actividad de la OT</h2>' not in tracking_template
+    assert '<h2 id="tracking-activity-title">Mensajes e historial</h2>' in tracking_template
     assert '.tracking-message-entry,' in tracking_css
     assert '.tracking-audit-entry,' in tracking_css
     assert 'Actividad compacta y coherente con la mensajeria de Produccion.' in tracking_css

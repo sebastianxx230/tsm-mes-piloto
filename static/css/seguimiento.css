@@ -3837,3 +3837,149 @@ body.tracking-overlay-open {
     font-size: 10px;
     line-height: 1.5;
 }
+
+/* Mensajes 6.6: misma superficie ligera usada en Producción. */
+.tracking-activity-backdrop {
+    top: 76px;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    align-items: stretch;
+    padding: 16px 16px 0;
+    background: transparent;
+    backdrop-filter: none;
+}
+
+.tracking-activity-drawer {
+    width: min(400px, calc(100vw - 32px));
+    height: auto;
+    max-height: none;
+    border: 1px solid #d8e1ec;
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+    background: #ffffff;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, .16);
+}
+
+.tracking-activity-drawer:focus {
+    outline: none;
+}
+
+.tracking-drawer-header {
+    min-height: 62px;
+    padding: 12px 14px 12px 16px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #172033;
+}
+
+.tracking-drawer-title {
+    gap: 0;
+}
+
+.tracking-drawer-title h2 {
+    margin: 0;
+    color: #172033;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -.015em;
+}
+
+.tracking-drawer-title > div > span {
+    margin-top: 2px;
+    color: #8090a5;
+    font-size: 9.5px;
+    font-weight: 700;
+}
+
+.tracking-drawer-header .tracking-icon-button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid transparent !important;
+    border-radius: 9px;
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.tracking-drawer-header .tracking-icon-button:hover {
+    border-color: #d8e1ec !important;
+    background: #e8eef5;
+    color: #1e293b;
+}
+
+.tracking-activity-tabs {
+    min-height: 48px;
+    gap: 4px;
+    padding: 6px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #ffffff;
+}
+
+.tracking-activity-tab {
+    min-height: 36px;
+    border-radius: 9px;
+    color: #64748b;
+    font-size: 10.5px;
+    font-weight: 750;
+}
+
+.tracking-activity-tab::after {
+    display: none;
+}
+
+.tracking-activity-tab:hover {
+    background: #f8fafc;
+    color: #334155;
+}
+
+.tracking-activity-tab.is-active {
+    background: #eff6ff;
+    color: #1d4ed8;
+    box-shadow: none;
+}
+
+.tracking-drawer-body,
+.tracking-activity-pane {
+    background: #f8fafc;
+}
+
+.tracking-activity-pane {
+    padding: 12px 16px 18px;
+}
+
+.tracking-readonly-note {
+    min-height: 22px;
+    margin: 0 0 6px;
+    padding: 0 3px;
+    border: 0;
+    background: transparent;
+    color: #8090a5;
+    box-shadow: none;
+    font-size: 8.5px;
+}
+
+.tracking-message-entry .tracking-activity-copy > p {
+    border-color: #dce4ed;
+    border-radius: 13px 13px 13px 4px;
+    font-size: 11.5px;
+}
+
+.tracking-message-entry.is-current-user .tracking-activity-copy > p {
+    border-radius: 13px 13px 4px 13px;
+}
+
+@media (max-width: 640px) {
+    .tracking-activity-backdrop {
+        top: 76px;
+        padding: 0;
+    }
+
+    .tracking-activity-drawer {
+        width: 100vw;
+        height: auto;
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 0;
+    }
+}

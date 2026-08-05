@@ -6,7 +6,7 @@
 
 {% block head_extra %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/produccion.css') }}?v=3.6.1">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/produccion.css') }}?v=3.7.0">
 {% endblock %}
 
 {% block content %}
@@ -75,30 +75,25 @@
 <aside id="chat-drawer" class="production-chat-drawer translate-x-full" aria-label="Mensajes de la orden de trabajo" aria-hidden="true">
     <header class="production-chat-header">
         <div class="production-chat-heading">
-            <span class="production-chat-heading-icon material-symbols-rounded" aria-hidden="true">forum</span>
             <div>
-                <p>Coordinación de producción</p>
-                <h2>Mensajes de la OT</h2>
+                <h2>Mensajes</h2>
+                <p>OT {{ ot.ot }}</p>
             </div>
         </div>
         <button type="button" onclick="toggleChat()" class="production-chat-close" aria-label="Cerrar mensajes"><span class="material-symbols-rounded">close</span></button>
     </header>
-    <div class="production-chat-context">
-        <div><span>Orden de trabajo</span><strong>OT {{ ot.ot }}</strong></div>
-        <span class="production-chat-context-status"><i></i> Canal operativo</span>
-    </div>
     <div id="chat-history" class="production-chat-history" role="log" aria-live="polite"></div>
     {% if can_edit %}
     <div class="production-chat-composer">
         <div class="production-chat-composer-field">
-            <textarea id="chat-input" rows="1" maxlength="500" placeholder="Escribe una coordinación..." oninput="this.style.height = ''; this.style.height = Math.min(this.scrollHeight, 120) + 'px'" onkeydown="if(event.key === 'Enter' && !event.shiftKey){ event.preventDefault(); enviarMensaje(); }"></textarea>
+            <textarea id="chat-input" rows="1" maxlength="500" placeholder="Escribe un mensaje..." oninput="this.style.height = ''; this.style.height = Math.min(this.scrollHeight, 120) + 'px'" onkeydown="if(event.key === 'Enter' && !event.shiftKey){ event.preventDefault(); enviarMensaje(); }"></textarea>
             <button type="button" onclick="enviarMensaje()" class="production-chat-send" aria-label="Enviar mensaje"><span class="material-symbols-rounded">send</span></button>
         </div>
         <p>Enter para enviar · Shift + Enter para una nueva línea</p>
     </div>
     {% else %}
     <div class="production-chat-readonly">
-        La bitácora está disponible en modo consulta
+        Solo lectura
     </div>
     {% endif %}
 </aside>
@@ -179,7 +174,6 @@
 
     <div class="tsm-page-header production-page-header mb-4">
         <div class="production-header-identity flex min-w-0 items-start gap-4 md:items-center">
-            <div class="tsm-page-icon"><span class="material-symbols-rounded text-2xl">precision_manufacturing</span></div>
             <div class="min-w-0 flex-1">
                 <p class="tsm-kicker mb-1">Control operativo por elemento</p>
                 <h1 class="tsm-page-title">Avance de Producción</h1>
@@ -364,5 +358,5 @@
     };
 </script>
 
-<script src="{{ url_for('static', filename='js/produccion.js') }}?v=3.6.0"></script>
+<script src="{{ url_for('static', filename='js/produccion.js') }}?v=3.7.0"></script>
 {% endblock %}

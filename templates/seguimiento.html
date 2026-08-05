@@ -5,7 +5,7 @@
 
 {% block head_extra %}
 <meta name="referrer" content="no-referrer">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=6.5.2">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=6.6.0">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=1.2.1">
 {% endblock %}
 
@@ -13,9 +13,6 @@
 <div class="tracking-page" data-tracking-url="{{ url_for('gestion_ot_bp.seguimiento_data', id=ot.item) }}">
     <header class="tracking-order-card" aria-labelledby="tracking-page-title">
         <div class="tracking-order-main">
-            <div class="tracking-order-icon" aria-hidden="true">
-                <span class="material-symbols-rounded">precision_manufacturing</span>
-            </div>
             <div class="tracking-order-copy">
                 <p class="tracking-kicker">Sistema de producción</p>
                 <h1 id="tracking-page-title">Seguimiento de producción</h1>
@@ -317,10 +314,9 @@
         <aside class="tracking-activity-drawer" id="tracking-activity-drawer" role="dialog" aria-modal="true" aria-labelledby="tracking-activity-title" tabindex="-1">
             <header class="tracking-drawer-header">
                 <div class="tracking-drawer-title">
-                    <span class="tracking-drawer-icon material-symbols-rounded" aria-hidden="true">forum</span>
                     <div>
-                        <h2 id="tracking-activity-title">Actividad de la OT</h2>
-                        <span>Mensajes e historial · {{ ot.ot }}</span>
+                        <h2 id="tracking-activity-title">Mensajes e historial</h2>
+                        <span>OT {{ ot.ot }}</span>
                     </div>
                 </div>
                 <button type="button" class="tracking-icon-button" data-close-activity aria-label="Cerrar actividad">
@@ -328,7 +324,7 @@
                 </button>
             </header>
 
-            <div class="tracking-activity-tabs" role="tablist" aria-label="Actividad de la OT">
+            <div class="tracking-activity-tabs" role="tablist" aria-label="Mensajes e historial">
                 <button type="button" class="tracking-activity-tab is-active" id="tracking-messages-tab" role="tab" aria-selected="true" aria-controls="tracking-messages-pane" data-activity-tab="messages">
                     <span class="material-symbols-rounded" aria-hidden="true">forum</span>
                     <span>Mensajes</span>
