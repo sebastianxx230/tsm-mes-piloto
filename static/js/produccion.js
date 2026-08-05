@@ -224,6 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cargarTabs();
         iniciarAutoSync();
         configurarDetalleElemento();
+        configurarMatrizDesplazable();
         const endDateInput = document.getElementById('fecha-termino-input');
         if (endDateInput) endDateInput.dataset.previous = endDateInput.value;
         window.addEventListener('resize', programarAjusteAlturaMatriz);
@@ -236,6 +237,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (autoSyncInterval) clearInterval(autoSyncInterval);
             cellSaveTimers.forEach(timerId => clearTimeout(timerId));
             cellSaveTimers.clear();
+            if (matrixHeaderObserver) matrixHeaderObserver.disconnect();
+            if (matrixScrollFrame) window.cancelAnimationFrame(matrixScrollFrame);
         });
         window.setTimeout(ajustarAlturaMatriz, 250);
     } catch (e) {
@@ -246,10 +249,48 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 let matrixResizeTimer = null;
+let matrixScrollFrame = null;
+let matrixHeaderObserver = null;
 
 function programarAjusteAlturaMatriz() {
     window.clearTimeout(matrixResizeTimer);
     matrixResizeTimer = window.setTimeout(ajustarAlturaMatriz, 100);
+}
+
+function actualizarGeometriaMatriz(wrapper) {
+    if (!wrapper) return;
+    const firstHeaderRow = wrapper.querySelector('.sticky-top-1');
+    if (firstHeaderRow) {
+        const firstRowHeight = Math.max(1, Math.round(firstHeaderRow.getBoundingClientRect().height));
+        wrapper.style.setProperty('--matrix-header-first-row', `${firstRowHeight}px`);
+    }
+
+    const maxScrollLeft = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth);
+    wrapper.classList.toggle('is-scrolled-x', wrapper.scrollLeft > 2);
+    wrapper.classList.toggle('is-at-horizontal-end', maxScrollLeft - wrapper.scrollLeft < 2);
+}
+
+function configurarMatrizDesplazable() {
+    const wrapper = document.querySelector('[data-matrix-scroll]');
+    if (!wrapper || wrapper.dataset.scrollConfigured === 'true') return;
+    wrapper.dataset.scrollConfigured = 'true';
+
+    const scheduleUpdate = () => {
+        if (matrixScrollFrame) return;
+        matrixScrollFrame = window.requestAnimationFrame(() => {
+            matrixScrollFrame = null;
+            actualizarGeometriaMatriz(wrapper);
+        });
+    };
+
+    wrapper.addEventListener('scroll', scheduleUpdate, { passive: true });
+    if ('ResizeObserver' in window) {
+        matrixHeaderObserver = new ResizeObserver(scheduleUpdate);
+        matrixHeaderObserver.observe(wrapper);
+        const firstHeaderRow = wrapper.querySelector('.sticky-top-1');
+        if (firstHeaderRow) matrixHeaderObserver.observe(firstHeaderRow);
+    }
+    scheduleUpdate();
 }
 
 function configurarDetalleElemento() {
@@ -271,6 +312,8 @@ function ajustarAlturaMatriz() {
     const wrapper = document.querySelector('.matrix-wrapper');
     const tableModule = document.getElementById('table-module');
     if (!wrapper || !tableModule || tableModule.classList.contains('table-maximized')) return;
+
+    actualizarGeometriaMatriz(wrapper);
 
     if (window.innerWidth < 768) {
         wrapper.style.removeProperty('height');
@@ -1638,18 +1681,47 @@ async function guardarOpProceso(proc, nombre) {
 function toggleChat() {
     const drawer = document.getElementById('chat-drawer');
     const overlay = document.getElementById('chat-overlay');
+    const trigger = document.getElementById('production-chat-trigger');
     if (!drawer || !overlay) return;
 
     const opening = drawer.classList.contains('translate-x-full');
     if (opening) {
         drawer.classList.remove('translate-x-full');
+        drawer.setAttribute('aria-hidden', 'false');
+        if (trigger) trigger.setAttribute('aria-expanded', 'true');
         overlay.classList.add('overlay-open');
         cargarMensajes();
         const chatInput = document.getElementById('chat-input');
         if (chatInput) chatInput.focus();
     } else {
         drawer.classList.add('translate-x-full');
+        drawer.setAttribute('aria-hidden', 'true');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
         overlay.classList.remove('overlay-open');
+        if (trigger) trigger.focus();
+    }
+}
+
+function prepararHistorialMensajes(history, hasMessages) {
+    history.replaceChildren();
+
+    const divider = document.createElement('div');
+    divider.className = 'production-chat-divider';
+    divider.textContent = `OT ${window.ProduccionConfig.otOt} · coordinación operativa`;
+    history.appendChild(divider);
+
+    if (!hasMessages) {
+        const empty = document.createElement('div');
+        empty.className = 'production-chat-empty';
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-rounded';
+        icon.textContent = 'chat_bubble';
+        const title = document.createElement('strong');
+        title.textContent = 'Sin mensajes todavía';
+        const copy = document.createElement('span');
+        copy.textContent = 'Registra aquí coordinaciones breves que deban quedar asociadas a esta OT.';
+        empty.append(icon, title, copy);
+        history.appendChild(empty);
     }
 }
 
@@ -1671,7 +1743,7 @@ async function cargarMensajes() {
 
         const history = document.getElementById('chat-history');
         if (history) {
-            history.innerHTML = `<div class="flex flex-col items-center my-3"><span class="bg-slate-200 text-slate-600 text-[10px] font-bold px-3 py-1 rounded-full shadow-sm">Inicio de Mensajería - OT ${escapeHtml(window.ProduccionConfig.otOt)}</span></div>`;
+            prepararHistorialMensajes(history, data.length > 0);
             data.forEach(message => agregarMensajeAlDOM(message));
         }
         lastMessageSyncAt = Date.now();
@@ -1688,10 +1760,12 @@ async function cargarMensajes() {
 async function enviarMensaje() {
     if (!canEdit) return;
     const input = document.getElementById('chat-input');
+    const sendButton = document.querySelector('.production-chat-send');
     const message = input?.value.trim();
     if (!input || !message) return;
 
     input.disabled = true;
+    if (sendButton) sendButton.disabled = true;
     try {
         const res = await fetch('/api/mensajes/enviar', {
             method: 'POST',
@@ -1718,43 +1792,48 @@ async function enviarMensaje() {
         mostrarAlerta(error.message || "No se pudo enviar el mensaje.", "error");
     } finally {
         input.disabled = false;
+        if (sendButton) sendButton.disabled = false;
         input.focus();
     }
 }
 
 function agregarMensajeAlDOM(msg) {
-    const history = document.getElementById('chat-history'); const esMio = (msg.usuario_id && msg.usuario_id.toString() === currentUserId.toString());
-    const alignClass = esMio ? 'items-end' : 'items-start'; const bgClass = esMio ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'; const nameText = esMio ? 'Tú' : (msg.usuario_nombre || 'Usuario');
+    const history = document.getElementById('chat-history');
+    const esMio = Boolean(msg.usuario_id && msg.usuario_id.toString() === currentUserId.toString());
+    const nameText = esMio ? 'Tú' : (msg.usuario_nombre || 'Usuario');
     const fechaMostrar = msg.fecha && !msg.fecha.includes('Invalid') ? msg.fecha : 'Recién';
     if (!history) return;
 
-    const wrapper = document.createElement('div');
-    wrapper.className = `flex flex-col ${alignClass} w-full animate-fade-in my-1.5`;
+    const emptyState = history.querySelector('.production-chat-empty');
+    if (emptyState) emptyState.remove();
 
-    const metadata = document.createElement('span');
-    metadata.className = 'text-[9px] text-slate-500 font-bold px-1';
+    const wrapper = document.createElement('div');
+    wrapper.className = `production-chat-message ${esMio ? 'is-own' : 'is-other'}`;
+
+    const metadata = document.createElement('div');
+    metadata.className = 'production-chat-message-meta';
     metadata.append(document.createTextNode(String(nameText)));
 
-    const date = document.createElement('span');
-    date.className = 'text-slate-400 font-semibold ml-1';
-    date.textContent = `• ${fechaMostrar}`;
-    metadata.append(document.createTextNode(' '), date);
+    const date = document.createElement('time');
+    date.textContent = String(fechaMostrar);
+    metadata.append(date);
 
     const messageRow = document.createElement('div');
-    messageRow.className = `flex items-center ${esMio ? 'justify-end' : 'justify-start'} w-full gap-1 mt-0.5`;
+    messageRow.className = 'production-chat-message-row';
 
     const bubble = document.createElement('div');
-    bubble.className = `${bgClass} rounded-xl px-3 py-2 text-[12px] shadow-sm max-w-[85%] leading-snug break-words`;
+    bubble.className = 'production-chat-bubble';
     bubble.textContent = String(msg.mensaje ?? '');
 
     let deleteButton = null;
     if (isAdmin) {
         deleteButton = document.createElement('button');
         deleteButton.type = 'button';
-        deleteButton.className = 'text-slate-300 hover:text-red-500 transition-colors px-1';
-        deleteButton.title = 'Borrar (Solo Admin)';
+        deleteButton.className = 'production-chat-delete';
+        deleteButton.title = 'Eliminar mensaje';
+        deleteButton.setAttribute('aria-label', 'Eliminar mensaje');
         const deleteIcon = document.createElement('span');
-        deleteIcon.className = 'material-symbols-rounded text-[14px]';
+        deleteIcon.className = 'material-symbols-rounded';
         deleteIcon.textContent = 'delete';
         deleteButton.appendChild(deleteIcon);
         deleteButton.addEventListener('click', () => eliminarMensaje(msg.id, deleteButton));

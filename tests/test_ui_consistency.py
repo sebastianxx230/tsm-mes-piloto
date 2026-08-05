@@ -41,6 +41,37 @@ def test_catalog_keeps_compact_original_structure():
     assert 'class="tsm-page ' in catalog_template
     assert 'Planificación y trazabilidad' not in catalog_template
     assert 'id="catalog-page-title"' not in catalog_template
+    catalog_css = read('static/css/catalogo.css')
+    assert 'catalog-toolbar' in catalog_template
+    assert 'catalog-primary-action' in catalog_template
+    assert 'border-l-[3px]' not in catalog_template
+    assert '.ot-row-desktop[data-state*="proceso"]' in catalog_css
+    assert 'grid-template-columns: minmax(280px, 1fr) auto;' in catalog_css
+
+
+def test_production_header_chat_and_matrix_share_stable_layout_contracts():
+    production_template = read('templates/produccion.html')
+    production_css = read('static/css/produccion.css')
+    production_script = read('static/js/produccion.js')
+
+    assert 'production-page-header' in production_template
+    assert 'production-header-actions' in production_template
+    assert 'production-header-button' in production_template
+    assert 'production-chat-drawer' in production_template
+    assert 'production-chat-context' in production_template
+    assert 'Inicio de Mensajer' not in production_script
+    assert 'production-chat-message' in production_script
+
+    assert '--matrix-frozen-width: 420px;' in production_css
+    assert '.sticky-c5 {' in production_css
+    assert '.sticky-c5 { position: sticky; left: 0;' in production_css
+    assert '.sticky-corner-l { position: relative;' in production_css
+    assert '#matriz-body .row-total-percentage' in production_css
+    assert 'background: #0f172a !important;' in production_css
+    assert 'var(--matrix-header-first-row)' in production_css
+    assert 'configurarMatrizDesplazable();' in production_script
+    assert 'requestAnimationFrame' in production_script
+    assert 'ResizeObserver' in production_script
 
 
 def test_messages_and_history_share_the_same_surface_components():

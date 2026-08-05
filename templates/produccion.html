@@ -6,7 +6,7 @@
 
 {% block head_extra %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/produccion.css') }}?v=3.3.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/produccion.css') }}?v=3.6.1">
 {% endblock %}
 
 {% block content %}
@@ -71,32 +71,37 @@
     </section>
 </div>
 
-<div id="chat-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] opacity-0 pointer-events-none transition-all duration-300" onclick="toggleChat()"></div>
-<div id="chat-drawer" class="fixed top-0 right-0 h-full w-full sm:w-[360px] bg-white shadow-2xl z-[101] transform translate-x-full transition-transform duration-300 flex flex-col">
-    <div class="p-4 bg-slate-900 text-white flex justify-between items-center shadow-md z-10 shrink-0">
-        <div class="flex items-center gap-2">
-            <span class="material-symbols-rounded">forum</span>
-            <div><h3 class="text-[14px] font-black leading-tight">Mensajes OT</h3><p class="text-[10px] text-slate-300 font-medium">Consultas y coordinaciones</p></div>
+<div id="chat-overlay" class="production-chat-overlay opacity-0 pointer-events-none" onclick="toggleChat()"></div>
+<aside id="chat-drawer" class="production-chat-drawer translate-x-full" aria-label="Mensajes de la orden de trabajo" aria-hidden="true">
+    <header class="production-chat-header">
+        <div class="production-chat-heading">
+            <span class="production-chat-heading-icon material-symbols-rounded" aria-hidden="true">forum</span>
+            <div>
+                <p>Coordinación de producción</p>
+                <h2>Mensajes de la OT</h2>
+            </div>
         </div>
-        <button onclick="toggleChat()" class="text-slate-300 hover:text-white transition bg-slate-800 hover:bg-slate-700 p-1.5 rounded-md"><span class="material-symbols-rounded text-[20px]">close</span></button>
+        <button type="button" onclick="toggleChat()" class="production-chat-close" aria-label="Cerrar mensajes"><span class="material-symbols-rounded">close</span></button>
+    </header>
+    <div class="production-chat-context">
+        <div><span>Orden de trabajo</span><strong>OT {{ ot.ot }}</strong></div>
+        <span class="production-chat-context-status"><i></i> Canal operativo</span>
     </div>
-    <div class="shrink-0 border-b border-blue-100 bg-blue-50 px-4 py-1.5 text-center">
-        <span class="text-[9px] font-bold uppercase tracking-widest text-blue-700"><span class="material-symbols-rounded text-[11px] align-text-bottom">forum</span> Consultas, dudas y coordinación de la OT</span>
-    </div>
-    <div id="chat-history" class="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50 flex flex-col"></div>
+    <div id="chat-history" class="production-chat-history" role="log" aria-live="polite"></div>
     {% if can_edit %}
-    <div class="p-3 bg-white border-t border-slate-200 shrink-0">
-        <div class="flex items-end gap-2 bg-slate-50 border border-slate-200 rounded-xl p-1 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-            <textarea id="chat-input" rows="1" placeholder="Escribe un mensaje..." class="w-full bg-transparent text-[13px] text-slate-700 p-2 outline-none resize-none overflow-hidden" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'" onkeydown="if(event.key === 'Enter' && !event.shiftKey){ event.preventDefault(); enviarMensaje(); }"></textarea>
-            <button onclick="enviarMensaje()" class="w-9 h-9 flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center transition shadow-sm mb-0.5 mr-0.5"><span class="material-symbols-rounded text-[20px]">send</span></button>
+    <div class="production-chat-composer">
+        <div class="production-chat-composer-field">
+            <textarea id="chat-input" rows="1" maxlength="500" placeholder="Escribe una coordinación..." oninput="this.style.height = ''; this.style.height = Math.min(this.scrollHeight, 120) + 'px'" onkeydown="if(event.key === 'Enter' && !event.shiftKey){ event.preventDefault(); enviarMensaje(); }"></textarea>
+            <button type="button" onclick="enviarMensaje()" class="production-chat-send" aria-label="Enviar mensaje"><span class="material-symbols-rounded">send</span></button>
         </div>
+        <p>Enter para enviar · Shift + Enter para una nueva línea</p>
     </div>
     {% else %}
-    <div class="border-t border-slate-200 bg-slate-100 px-4 py-3 text-center text-[10px] font-bold uppercase tracking-wider text-slate-500">
+    <div class="production-chat-readonly">
         La bitácora está disponible en modo consulta
     </div>
     {% endif %}
-</div>
+</aside>
 
 
 <div id="detalle-overlay" class="production-detail-overlay hidden opacity-0" aria-hidden="true">
@@ -172,18 +177,18 @@
 
 <div class="tsm-page production-page animate-fade-in font-sans">
 
-    <div class="tsm-page-header mb-4 flex-col items-start xl:flex-row xl:items-center">
-        <div class="flex w-full items-start gap-4 xl:w-auto md:items-center">
+    <div class="tsm-page-header production-page-header mb-4">
+        <div class="production-header-identity flex min-w-0 items-start gap-4 md:items-center">
             <div class="tsm-page-icon"><span class="material-symbols-rounded text-2xl">precision_manufacturing</span></div>
-            <div class="w-full">
+            <div class="min-w-0 flex-1">
                 <p class="tsm-kicker mb-1">Control operativo por elemento</p>
                 <h1 class="tsm-page-title">Avance de Producción</h1>
                 <div class="flex flex-wrap items-center gap-2 text-[11px] font-bold mt-1"><span class="text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">OT {{ ot.ot }}</span><span class="text-slate-300 hidden sm:inline">•</span><span class="text-slate-600 break-words">{{ ot.cliente }}</span></div>
-                <div class="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2 text-[11px] sm:text-[12px] font-medium mt-1 text-slate-600"><span class="font-bold text-slate-700 shrink-0">Estructura:</span><span class="line-clamp-2 sm:line-clamp-none text-slate-500" title="{{ ot.descripcion }}">{{ ot.descripcion }}</span></div>
+                <div class="production-header-description flex gap-1 text-[11px] font-medium text-slate-600"><span class="shrink-0 font-bold text-slate-700">Estructura:</span><span class="truncate text-slate-500" title="{{ ot.descripcion }}">{{ ot.descripcion }}</span></div>
             </div>
         </div>
-        <div class="flex w-full flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 sm:justify-end xl:w-auto xl:border-t-0 xl:pt-0">
-            <div class="production-dates flex-1 sm:flex-none">
+        <div class="production-header-actions">
+            <div class="production-dates">
                 <div class="production-date-block">
                     <span>Inicio registrado</span>
                     <strong>{{ ot.fecha_iniciado.strftime('%d/%m/%Y') if ot.fecha_iniciado else 'Sin fecha' }}</strong>
@@ -194,10 +199,10 @@
                     <input id="fecha-termino-input" type="date" value="{{ ot.fecha_termino.isoformat() if ot.fecha_termino else '' }}" min="{{ ot.fecha_iniciado.isoformat() if ot.fecha_iniciado else '' }}" {% if not can_edit %}disabled{% endif %} onchange="guardarFechaTermino(this)">
                 </label>
             </div>
-            <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="tsm-button tsm-button-secondary">
+            <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="tsm-button tsm-button-secondary production-header-button">
                 <span class="material-symbols-rounded text-[18px]">monitoring</span> Seguimiento
             </a>
-            <button type="button" onclick="toggleChat()" class="tsm-button tsm-button-secondary relative"><span class="material-symbols-rounded text-[19px]">forum</span> Mensajes</button>
+            <button type="button" id="production-chat-trigger" onclick="toggleChat()" class="tsm-button tsm-button-secondary production-header-button relative" aria-controls="chat-drawer" aria-expanded="false"><span class="material-symbols-rounded text-[19px]">forum</span> Mensajes</button>
         </div>
     </div>
 
@@ -298,11 +303,11 @@
                 </div>
             </div>
 
-            <div class="matrix-wrapper bg-white relative">
-                <table class="w-full text-left border-collapse bg-white" style="min-width: 1750px;">
+            <div class="matrix-wrapper bg-white relative" data-matrix-scroll>
+                <table class="production-matrix w-full text-left border-collapse bg-white" style="min-width: 1750px;">
                     <thead class="sticky top-0 z-40 bg-slate-50">
                     <tr class="text-[9px] font-bold text-slate-600 uppercase tracking-widest text-center sticky-top-1 bg-slate-50">
-                        <th colspan="6" class="py-2.5 border-b border-r border-slate-200 sticky-corner-l bg-slate-50" style="min-width: 480px; max-width: 480px;">INF GENERAL DEL ELEMENTO</th>
+                        <th colspan="6" class="py-2.5 border-b border-r border-slate-200 sticky-corner-l bg-slate-50">INF GENERAL DEL ELEMENTO</th>
                         <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-hab col-hab">HABILITADO</th>
                         <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-arm col-arm">ARMADO</th>
                         <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-sol col-sol">SOLDADO</th>
@@ -312,7 +317,7 @@
                         <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-are col-are" style="display:none;">ARENADO</th>
                         <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-pin col-pin" style="display:none;">PINTADO</th>
                         <th colspan="2" class="py-2.5 border-b border-l border-slate-200 border-top-des bg-slate-50 sticky-corner-des">DESPACHO</th>
-                        <th rowspan="2" class="py-2.5 border-b border-slate-800 bg-slate-900 text-white sticky-corner-r align-middle">AVANCE<br>TOTAL</th>
+                        <th rowspan="2" class="py-2.5 border-b border-slate-800 sticky-corner-r align-middle"><span>AVANCE</span><strong>TOTAL</strong></th>
                     </tr>
 
                     <tr class="bg-white text-slate-400 text-[9px] font-bold uppercase border-b-2 border-slate-200 text-center sticky-top-2">
@@ -359,5 +364,5 @@
     };
 </script>
 
-<script src="{{ url_for('static', filename='js/produccion.js') }}?v=3.5.0"></script>
+<script src="{{ url_for('static', filename='js/produccion.js') }}?v=3.6.0"></script>
 {% endblock %}
