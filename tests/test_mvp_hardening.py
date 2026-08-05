@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app import _normalize_database_url
 from models.catalogo_ot import CatalogoOT
 
 
@@ -17,6 +18,18 @@ def test_secret_key_has_no_source_fallback():
     assert "os.environ.get('SECRET_KEY')" in source
     assert 'clave-secreta-tsm-produccion-2026' not in source
     assert 'db.create_all()' not in source
+
+
+def test_database_url_normalizes_common_dashboard_pastes():
+    expected = (
+        'postgresql://app_user:example@ep-example-pooler.neon.tech/'
+        'neondb?sslmode=require&channel_binding=require'
+    )
+
+    assert _normalize_database_url(expected) == expected
+    assert _normalize_database_url(f"psql '{expected}'") == expected
+    assert _normalize_database_url(f'  DATABASE_URL="{expected}"  ') == expected
+    assert _normalize_database_url('sqlite:///test.sqlite') == 'sqlite:///test.sqlite'
 
 
 def test_logout_requires_post_and_clears_session(client, login):

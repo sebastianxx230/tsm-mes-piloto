@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import timedelta
 from flask import Flask, jsonify, redirect, request, url_for
 from whitenoise import WhiteNoise
@@ -9,11 +10,41 @@ from extensions import limiter, migrate
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.pool import NullPool
 from utils.logging_config import configure_structured_logging
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 load_dotenv()
+
+
+def _normalize_database_url(raw_value):
+    """Normalize common dashboard copy/paste formats without logging secrets."""
+    if not raw_value:
+        raise ValueError("DATABASE_URL no encontrada.")
+
+    value = raw_value.strip().lstrip('\ufeff')
+    if value.upper().startswith('DATABASE_URL='):
+        value = value.split('=', 1)[1].strip()
+
+    value = value.strip('"\'')
+    if not value.startswith(('postgresql://', 'postgres://', 'sqlite:')):
+        match = re.search(r'postgres(?:ql)?://[^\s\'\"]+', value)
+        if match:
+            value = match.group(0).rstrip(';')
+
+    if value.startswith('postgres://'):
+        value = value.replace('postgres://', 'postgresql://', 1)
+
+    try:
+        make_url(value)
+    except ArgumentError as exc:
+        raise ValueError(
+            'DATABASE_URL tiene un formato invalido; pegue solo la connection string.'
+        ) from exc
+
+    return value
 
 app = Flask(
     __name__,
@@ -71,12 +102,7 @@ app.config['RATELIMIT_STORAGE_URI'] = os.environ.get(
 )
 app.config['RATELIMIT_HEADERS_ENABLED'] = True
 
-db_url = os.environ.get('DATABASE_URL')
-if not db_url:
-    raise ValueError("❌ DATABASE_URL no encontrada.")
-
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+db_url = _normalize_database_url(os.environ.get('DATABASE_URL'))
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
