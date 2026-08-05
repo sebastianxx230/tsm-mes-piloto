@@ -1,0 +1,175 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Mi perfil{% endblock %}
+{% block page_title %}Mi perfil{% endblock %}
+
+{% block content %}
+<div class="tsm-page mx-auto max-w-[1280px] animate-fade-in font-sans">
+
+    <div class="tsm-page-header mb-4 flex-col items-start sm:flex-row sm:items-center">
+        <div class="flex min-w-0 items-center gap-4">
+            <div class="tsm-page-icon"><span class="material-symbols-rounded text-[24px]">account_circle</span></div>
+            <div>
+                <p class="tsm-kicker mb-1">Cuenta y seguridad</p>
+                <h1 class="tsm-page-title">Mi perfil</h1>
+                <p class="tsm-page-subtitle mt-1">Administra tus datos de identificación y contraseña de acceso.</p>
+            </div>
+        </div>
+        {% if current_user.rol == 'admin' %}
+        <a href="{{ url_for('admin_bp.usuarios') }}" class="tsm-button tsm-button-secondary">
+            <span class="material-symbols-rounded text-[17px]">manage_accounts</span>
+            Gestionar accesos
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-[280px_1fr]">
+        
+        <aside class="tsm-panel">
+            <div class="tsm-panel-header">
+                <h3 class="text-[11px] font-bold uppercase tracking-widest text-slate-800">
+                    Resumen de cuenta
+                </h3>
+            </div>
+
+            <div class="p-5">
+                <div class="mb-5 flex items-center gap-3">
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-blue-200 bg-blue-50 text-[14px] font-black uppercase text-blue-700">
+                        {{ current_user.nombre[:2] if current_user.nombre else current_user.username[:2] }}
+                    </div>
+
+                    <div>
+                        <h2 class="text-[14px] font-bold leading-tight text-slate-900">
+                            {{ current_user.nombre }}
+                        </h2>
+                    </div>
+                </div>
+
+                <div class="space-y-3.5 border-t border-slate-100 pt-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Usuario</span>
+                        <span class="text-[12px] font-bold text-slate-800">{{ current_user.username }}</span>
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Rol</span>
+                        <span class="text-[12px] font-bold capitalize text-slate-800">{{ current_user.rol }}</span>
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Estado</span>
+                        <span class="inline-flex items-center justify-center rounded-[4px] border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-emerald-700">
+                            Activo
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+        
+        <div class="tsm-panel flex h-full flex-col">
+            <div class="tsm-panel-header px-6">
+                <h2 class="text-[11px] font-bold uppercase tracking-widest text-slate-800">
+                    Datos Personales
+                </h2>
+            </div>
+
+            <form method="POST" action="{{ url_for('perfil_bp.mi_perfil') }}" class="flex flex-1 flex-col">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="grid flex-1 gap-6 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+
+                    <!-- Columna Izquierda -->
+                    <div class="space-y-4">
+                        <div class="w-full max-w-[520px]">
+                            <label for="nombre" class="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                Nombre completo
+                            </label>
+                            <input id="nombre"
+                                   type="text"
+                                   name="nombre"
+                                   value="{{ current_user.nombre }}"
+                                   required
+                                   maxlength="120"
+                                   autocomplete="name"
+                                   class="tsm-control w-full px-3">
+                        </div>
+
+                        <div class="w-full max-w-[520px]">
+                            <label for="username" class="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                Usuario de inicio de sesión
+                            </label>
+                            <input id="username"
+                                   type="text"
+                                   name="username"
+                                   value="{{ current_user.username }}"
+                                   required
+                                   minlength="3"
+                                   maxlength="50"
+                                   autocomplete="username"
+                                   class="tsm-control w-full px-3">
+                        </div>
+
+                        <div class="my-1 w-full max-w-[520px] border-t border-slate-100"></div>
+
+                        <div class="w-full max-w-[520px]">
+                            <label class="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                Contraseña
+                            </label>
+
+                            <div class="flex items-center gap-2">
+                                <input type="password"
+                                       value="••••••••"
+                                       disabled
+                                       class="tsm-control flex-1 cursor-not-allowed bg-slate-50 px-3 text-[16px] tracking-widest text-slate-400">
+
+                                <a href="{{ url_for('perfil_bp.cambiar_password') }}"
+                                   class="tsm-button tsm-button-secondary">
+                                    Cambiar
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="w-full">
+                        <div class="h-full rounded-md border border-slate-200 border-l-2 border-l-blue-600 bg-slate-50/70 p-4">
+                            <h4 class="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-blue-800">
+                                <span class="material-symbols-rounded text-[16px]">info</span>
+                                Información del Sistema
+                            </h4>
+
+                            <div class="space-y-3 text-[12px] leading-relaxed text-slate-600">
+                                <p>
+                                    <strong class="text-slate-700">Usuario Único:</strong>
+                                    {% if current_user.rol in ['admin', 'editor'] %}
+                                    Tu nombre de usuario es tu identificador principal en el sistema. Se utiliza para mantener la trazabilidad exacta de todas tus acciones operativas dentro de producción.
+                                    {% else %}
+                                    Tu nombre de usuario es tu identificador personal. Se utiliza para gestionar tu acceso seguro al sistema, permitiéndote visualizar el estado y la documentación para cada OT.
+                                    {% endif %}
+                                </p>
+
+                                <p>
+                                    <strong class="text-slate-700">Seguridad:</strong>
+                                    Te recomendamos actualizar tu contraseña periódicamente. El sistema requiere un mínimo de 8 caracteres alfanuméricos.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                
+                <div class="mt-auto flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-6 py-3">
+                    <button type="submit"
+                            class="tsm-button tsm-button-primary">
+                        Guardar cambios
+                    </button>
+
+                    <button type="reset"
+                            class="tsm-button tsm-button-secondary">
+                        Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

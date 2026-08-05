@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Gestión de accesos - TSM{% endblock %}
+{% block page_title %}Gestión de accesos{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin_usuarios.css', v='4') }}">
+{% endblock %}
+
+{% block content %}
+{% set role_labels = {'admin': 'Administrador', 'editor': 'Editor', 'viewer': 'Lector'} %}
+<div class="tsm-page space-y-4">
+    <section class="tsm-page-header flex-col items-start lg:flex-row lg:items-center">
+        <div class="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex min-w-0 items-start gap-4">
+                <div class="tsm-page-icon">
+                    <span class="material-symbols-rounded text-[25px]">manage_accounts</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="tsm-kicker">Administración de usuarios</p>
+                    <h1 class="tsm-page-title mt-1">Gestión de accesos</h1>
+                    <p class="tsm-page-subtitle mt-1 max-w-3xl">
+                        Administra las cuentas, sus perfiles de operación y el estado de acceso.
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap">
+                <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}" class="tsm-button tsm-button-secondary flex-1 whitespace-nowrap sm:flex-none">
+                    <span class="material-symbols-rounded text-[17px]">arrow_back</span>
+                    Catálogo de OTs
+                </a>
+                <button type="button" class="tsm-button tsm-button-primary flex-1 whitespace-nowrap sm:flex-none" data-open-create-user>
+                    <span class="material-symbols-rounded text-[17px]">person_add</span>
+                    Nuevo usuario
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <section class="grid grid-cols-2 gap-2.5 md:grid-cols-5">
+        {% for label, value, icon, color in [
+            ('Usuarios', stats.total, 'group', 'text-blue-700'),
+            ('Activos', stats.active, 'verified_user', 'text-emerald-600'),
+            ('Administradores', stats.admins, 'shield_person', 'text-slate-700'),
+            ('Editores', stats.editors, 'edit_note', 'text-orange-600'),
+            ('Lectores', stats.viewers, 'visibility', 'text-indigo-600')
+        ] %}
+        <div class="flex min-h-[64px] items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+            <span class="material-symbols-rounded text-[20px] {{ color }}">{{ icon }}</span>
+            <div class="min-w-0">
+                <p class="truncate text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">{{ label }}</p>
+                <p class="mt-0.5 text-xl font-extrabold leading-none text-slate-900">{{ value }}</p>
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+
+    <section class="access-panel overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <header class="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <div class="flex items-center gap-2">
+                    <h2 class="text-[14px] font-extrabold text-slate-900">Usuarios registrados</h2>
+                    <span class="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-bold text-slate-500">{{ stats.total }}</span>
+                </div>
+                <p class="mt-0.5 text-[11px] font-medium text-slate-500">Selecciona una cuenta para editar sus datos o restablecer su contraseña.</p>
+            </div>
+
+            <label class="access-search relative block w-full sm:w-[260px]">
+                <span class="material-symbols-rounded pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">search</span>
+                <span class="sr-only">Buscar usuario</span>
+                <input id="user-search" type="search" placeholder="Buscar usuario" autocomplete="off" class="h-9 w-full rounded-md border border-slate-300 bg-white pl-9 pr-3 text-[12px] font-semibold outline-none placeholder:font-medium placeholder:text-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600">
+            </label>
+        </header>
+
+        <div class="access-table-wrap">
+            <table class="access-table w-full border-collapse text-left">
+                <!-- Las proporciones se fijan también desde CSS para que no dependan de Tailwind. -->
+                <colgroup class="access-table-columns">
+                    <col>
+                    <col>
+                    <col>
+                    <col>
+                </colgroup>
+
+                <thead>
+                    <tr>
+                        <th scope="col">Usuario</th>
+                        <th scope="col" class="text-center">Perfil</th>
+                        <th scope="col" class="text-center">Estado</th>
+                        <th scope="col" class="text-right">Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="users-table-body" class="divide-y divide-slate-200">
+                    {% for user in users %}
+                    <tr data-user-row>
+                        <td>
+                            <div class="access-user-cell flex min-w-0 items-center gap-3">
+                                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border {% if user.activo %}border-blue-200 bg-blue-50 text-blue-700{% else %}border-slate-200 bg-slate-100 text-slate-400{% endif %}">
+                                    <span class="material-symbols-rounded text-[18px]">person</span>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <p class="truncate text-[13px] font-bold text-slate-900">{{ user.nombre }}</p>
+                                        {% if user.id == current_user.id %}
+                                        <span class="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-blue-700">Tu cuenta</span>
+                                        {% endif %}
+                                    </div>
+                                    <p class="mt-0.5 text-[10px] font-medium text-slate-400">@{{ user.username }} · ID {{ user.id }}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            <span class="access-role access-role--{{ user.rol }}">{{ role_labels[user.rol] }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="access-status {% if user.activo %}access-status--active{% else %}access-status--blocked{% endif %}">
+                                <span></span>{{ 'Activo' if user.activo else 'Bloqueado' }}
+                            </span>
+                        </td>
+                        <td class="text-right">
+                            <button
+                                type="button"
+                                class="access-edit-button"
+                                data-edit-user
+                                data-action="{{ url_for('admin_bp.actualizar_usuario', user_id=user.id) }}"
+                                data-name="{{ user.nombre }}"
+                                data-username="{{ user.username }}"
+                                data-role="{{ user.rol }}"
+                                data-active="{{ '1' if user.activo else '0' }}"
+                                data-locked="{{ '1' if user.id == current_user.id else '0' }}"
+                            >
+                                <span class="material-symbols-rounded text-[16px]">edit</span>
+                                Editar
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="p-10 text-center">
+                            <span class="material-symbols-rounded text-[32px] text-slate-300">group_off</span>
+                            <p class="mt-2 text-[12px] font-semibold text-slate-500">No hay usuarios registrados.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div id="users-empty-search" class="hidden px-6 py-12 text-center">
+                <span class="material-symbols-rounded text-[30px] text-slate-300">person_search</span>
+                <p class="mt-2 text-[12px] font-semibold text-slate-500">No encontramos usuarios con ese criterio.</p>
+            </div>
+        </div>
+
+        <footer class="flex items-center gap-1.5 border-t border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[10px] font-semibold text-slate-500">
+            <span class="material-symbols-rounded text-[15px] text-amber-600">lock</span>
+            Tu propio perfil y estado están protegidos.
+        </footer>
+    </section>
+</div>
+
+<dialog id="create-user-dialog" class="access-dialog" aria-labelledby="create-user-title">
+    <form method="post" action="{{ url_for('admin_bp.crear_usuario') }}" class="access-dialog-card">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <header class="access-dialog-header">
+            <div>
+                <p class="tsm-kicker">Administración de usuarios</p>
+                <h2 id="create-user-title" class="mt-1 text-[17px] font-extrabold text-slate-900">Crear nuevo acceso</h2>
+                <p class="mt-1 text-[11px] font-medium text-slate-500">La cuenta quedará activa inmediatamente.</p>
+            </div>
+            <button type="button" class="access-dialog-close" data-close-dialog aria-label="Cerrar">
+                <span class="material-symbols-rounded text-[19px]">close</span>
+            </button>
+        </header>
+
+        <div class="access-dialog-body grid gap-3.5 sm:grid-cols-2">
+            <div>
+                <label for="new-name" class="access-field-label">Nombre completo</label>
+                <input id="new-name" name="nombre" type="text" maxlength="100" required autocomplete="name" class="access-control">
+            </div>
+            <div>
+                <label for="new-username" class="access-field-label">Usuario</label>
+                <input id="new-username" name="username" type="text" minlength="3" maxlength="50" pattern="[a-z0-9._-]+" required autocomplete="off" class="access-control lowercase">
+            </div>
+            <div class="sm:col-span-2">
+                <label for="new-role" class="access-field-label">Perfil de acceso</label>
+                <select id="new-role" name="rol" required class="access-control">
+                    <option value="viewer">Lector — solo consulta</option>
+                    <option value="editor">Editor — operación productiva</option>
+                    <option value="admin">Administrador — control total</option>
+                </select>
+            </div>
+            <div>
+                <label for="new-password" class="access-field-label">Contraseña temporal</label>
+                <input id="new-password" name="password" type="password" minlength="{{ min_password_length }}" required autocomplete="new-password" class="access-control">
+            </div>
+            <div>
+                <label for="new-password-confirmation" class="access-field-label">Confirmar contraseña</label>
+                <input id="new-password-confirmation" name="password_confirmation" type="password" minlength="{{ min_password_length }}" required autocomplete="new-password" class="access-control">
+            </div>
+            <p class="sm:col-span-2 text-[10px] font-medium text-slate-400">El usuario admite minúsculas, números, punto, guion y guion bajo. La contraseña requiere al menos {{ min_password_length }} caracteres.</p>
+        </div>
+
+        <footer class="access-dialog-footer">
+            <button type="button" class="tsm-button tsm-button-secondary" data-close-dialog>Cancelar</button>
+            <button type="submit" class="tsm-button tsm-button-primary">
+                <span class="material-symbols-rounded text-[17px]">person_add</span>
+                Crear acceso
+            </button>
+        </footer>
+    </form>
+</dialog>
+
+<dialog id="edit-user-dialog" class="access-dialog" aria-labelledby="edit-user-title">
+    <form id="edit-user-form" method="post" class="access-dialog-card">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input id="edit-role-locked" type="hidden">
+        <input id="edit-active-locked" type="hidden">
+
+        <header class="access-dialog-header">
+            <div>
+                <p class="tsm-kicker">Cuenta seleccionada</p>
+                <h2 id="edit-user-title" class="mt-1 text-[17px] font-extrabold text-slate-900">Editar acceso</h2>
+                <p id="edit-user-caption" class="mt-1 text-[11px] font-medium text-slate-500"></p>
+            </div>
+            <button type="button" class="access-dialog-close" data-close-dialog aria-label="Cerrar">
+                <span class="material-symbols-rounded text-[19px]">close</span>
+            </button>
+        </header>
+
+        <div class="access-dialog-body grid gap-3.5 sm:grid-cols-2">
+            <div>
+                <label for="edit-name" class="access-field-label">Nombre completo</label>
+                <input id="edit-name" name="nombre" type="text" maxlength="100" required autocomplete="name" class="access-control">
+            </div>
+            <div>
+                <label for="edit-username" class="access-field-label">Usuario</label>
+                <input id="edit-username" name="username" type="text" minlength="3" maxlength="50" pattern="[a-z0-9._-]+" required autocomplete="off" class="access-control lowercase">
+            </div>
+            <div>
+                <label for="edit-role" class="access-field-label">Perfil</label>
+                <select id="edit-role" name="rol" class="access-control">
+                    <option value="viewer">Lector</option>
+                    <option value="editor">Editor</option>
+                    <option value="admin">Administrador</option>
+                </select>
+            </div>
+            <div>
+                <label for="edit-active" class="access-field-label">Estado</label>
+                <select id="edit-active" name="activo" class="access-control">
+                    <option value="1">Activo</option>
+                    <option value="0">Bloqueado</option>
+                </select>
+            </div>
+            <div class="sm:col-span-2">
+                <label for="edit-password" class="access-field-label">Restablecer contraseña</label>
+                <input id="edit-password" name="new_password" type="password" minlength="{{ min_password_length }}" autocomplete="new-password" placeholder="Dejar vacío para conservarla" class="access-control">
+            </div>
+            <p id="edit-lock-note" class="hidden items-center gap-1.5 sm:col-span-2 text-[10px] font-semibold text-amber-700">
+                <span class="material-symbols-rounded text-[15px]">lock</span>
+                Tu propio perfil y estado no se pueden modificar.
+            </p>
+        </div>
+
+        <footer class="access-dialog-footer">
+            <button type="button" class="tsm-button tsm-button-secondary" data-close-dialog>Cancelar</button>
+            <button type="submit" class="tsm-button tsm-button-primary">
+                <span class="material-symbols-rounded text-[17px]">save</span>
+                Guardar cambios
+            </button>
+        </footer>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin_usuarios.js') }}"></script>
+{% endblock %}

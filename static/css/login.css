@@ -1,0 +1,25 @@
+﻿@keyframes loginPanelFade {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes loginContentEnter {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.login-left-panel {
+    animation: loginPanelFade 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.login-right-content {
+    animation: loginContentEnter 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 0.15s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .login-left-panel,
+    .login-right-content {
+        animation: none;
+    }
+}

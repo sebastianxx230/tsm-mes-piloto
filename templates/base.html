@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es" class="preload">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+    <title>{% block title %}TSM Producción{% endblock %}</title>
+
+    <link rel="icon"
+          type="image/png"
+          href="https://topsolutionmetal.com/wp-content/uploads/2022/07/1.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.generated.css') }}">
+
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700;800;900&display=swap"
+          rel="stylesheet">
+
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@900&display=swap"
+          rel="stylesheet">
+
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+          rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/estilos.css') }}">
+
+    {% block head_extra %}{% endblock %}
+</head>
+
+<body class="flex min-h-screen flex-col border-t-[4px] border-t-[#0056b3] bg-[#f8fafc] font-sans text-slate-800">
+<div class="app-shell">
+
+    {% if not hide_header %}
+    <header class="sticky top-0 z-50 border-b border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+
+        <div class="mx-auto flex h-[76px] w-full max-w-[1800px] items-center justify-between px-5 sm:px-7 lg:px-9">
+
+            <div class="flex min-w-0 items-center gap-4 sm:gap-5">
+                <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}"
+                   class="flex shrink-0 items-center gap-3 transition-opacity hover:opacity-85"
+                   aria-label="Ir al catálogo de órdenes">
+
+                    <div class="flex h-[52px] w-[52px] items-center justify-center">
+                        <img src="{{ url_for('static', filename='images/images.png') }}"
+                             alt="Logo Top Solution Metal"
+                             class="h-full w-full object-contain"
+                             onerror="this.style.display='none';">
+                    </div>
+
+                    <div class="font-logo hidden flex-col justify-center leading-[0.88] sm:flex">
+                        <div class="text-[15px] font-black uppercase tracking-wide">
+                            <span class="text-slate-900">T</span><span class="text-[#0056b3]">OP</span>
+                        </div>
+                        <div class="text-[15px] font-black uppercase tracking-wide">
+                            <span class="text-slate-900">S</span><span class="text-[#0056b3]">OLUTION</span>
+                        </div>
+                        <div class="text-[15px] font-black uppercase tracking-wide">
+                            <span class="text-slate-900">M</span><span class="text-[#0056b3]">ETAL</span>
+                        </div>
+                    </div>
+                </a>
+
+                <div class="hidden h-9 w-[2px] bg-slate-200 md:block"></div>
+
+                <div class="hidden min-w-0 flex-col md:flex">
+                <span class="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                    Sistema de Producción
+                </span>
+
+                    <span class="truncate text-[15px] font-bold leading-tight text-slate-800">
+                    {% block page_title %}Catálogo de Órdenes{% endblock %}
+                </span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                {% if current_user.is_authenticated %}
+                <div class="relative" id="user-menu-container">
+
+                    <button type="button"
+                            onclick="toggleUserMenu()"
+                            aria-label="Abrir menú de usuario"
+                            aria-expanded="false"
+                            id="user-menu-button"
+                            class="flex w-full items-center justify-center gap-2.5 rounded-md border border-transparent px-2 py-1.5 transition-all hover:border-slate-200 hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100">
+
+                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-[#0f172a] text-white shadow-sm">
+                            <span class="material-symbols-rounded text-[20px]">person</span>
+                        </div>
+
+                        <div class="mt-1 hidden max-w-[180px] flex-col text-left md:flex">
+                        <span class="truncate text-[12px] font-bold leading-none text-slate-800">
+                            {{ current_user.nombre }}
+                        </span>
+
+                            <span class="mt-1 text-[10px] font-medium capitalize text-slate-400">
+                            {{ current_user.rol }}
+                        </span>
+                        </div>
+
+                        <span id="user-menu-arrow"
+                              class="material-symbols-rounded hidden text-[18px] text-slate-400 transition-transform md:block">
+                        expand_more
+                    </span>
+                    </button>
+
+                    <div id="user-dropdown"
+                         class="user-dropdown-menu invisible absolute left-1/2 top-full mt-1.5 w-44 origin-top -translate-x-1/2 translate-y-1 scale-95 overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5 opacity-0 shadow-[0_10px_24px_rgba(15,23,42,0.13)] transition-all duration-150">
+
+                        <a href="{{ url_for('perfil_bp.mi_perfil') }}"
+                           class="flex h-9 items-center gap-3 rounded-md px-3 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-blue-50 hover:text-[#0056b3]">
+                            <span class="material-symbols-rounded text-[18px]">person</span>
+                            Mi perfil
+                        </a>
+
+                        {% if current_user.rol == 'admin' %}
+                        <a href="{{ url_for('admin_bp.usuarios') }}"
+                           class="flex h-9 items-center gap-3 rounded-md px-3 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-blue-50 hover:text-[#0056b3]">
+                            <span class="material-symbols-rounded text-[18px]">admin_panel_settings</span>
+                            Gestión de accesos
+                        </a>
+                        {% endif %}
+
+                        <div class="my-1 border-t border-slate-100"></div>
+
+                        <form method="post" action="{{ url_for('login_bp.logout') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit"
+                                    class="flex h-9 w-full items-center gap-3 rounded-md px-3 text-left text-[12px] font-semibold text-red-600 transition-colors hover:bg-red-50">
+                                <span class="material-symbols-rounded text-[18px]">logout</span>
+                                Cerrar sesión
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+    {% endif %}
+
+    <main class="mx-auto w-full max-w-[1800px] flex-1 {% if not hide_header %}px-4 pb-12 pt-4 sm:px-6 lg:px-8{% endif %}">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div id="toast-container"
+         class="pointer-events-none fixed bottom-5 right-5 z-[9999] flex w-[calc(100%-2.5rem)] max-w-md flex-col gap-3 sm:w-full">
+
+        {% for category, message in messages %}
+        <div class="toast-message toast-enter pointer-events-auto flex items-start gap-3 rounded-xl border bg-white px-4 py-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.16)]
+                    {% if category in ['error', 'danger'] %}
+                        border-red-200 border-l-4 border-l-red-500
+                    {% elif category == 'success' %}
+                        border-emerald-200 border-l-4 border-l-emerald-500
+                    {% else %}
+                        border-blue-200 border-l-4 border-l-[#0069c7]
+                    {% endif %}">
+
+        <span class="material-symbols-rounded mt-0.5 shrink-0 text-[21px]
+            {% if category in ['error', 'danger'] %}
+                text-red-500
+            {% elif category == 'success' %}
+                text-emerald-500
+            {% else %}
+                text-[#0069c7]
+            {% endif %}">
+            {% if category in ['error', 'danger'] %}
+                error
+            {% elif category == 'success' %}
+                check_circle
+            {% else %}
+                info
+            {% endif %}
+        </span>
+
+            <p class="flex-1 pt-0.5 text-[13px] font-semibold leading-5 text-slate-700">
+                {{ message }}
+            </p>
+
+            <button type="button"
+                    class="toast-close flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                    aria-label="Cerrar mensaje">
+                <span class="material-symbols-rounded text-[18px]">close</span>
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

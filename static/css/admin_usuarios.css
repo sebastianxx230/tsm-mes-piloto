@@ -1,0 +1,296 @@
+.access-panel {
+    min-height: 0;
+}
+
+.access-table-wrap {
+    max-height: min(470px, calc(100vh - 390px));
+    min-height: 220px;
+    overflow: auto;
+}
+
+/*
+ * Distribución exacta de las columnas, siguiendo las guías de la captura:
+ * Usuario 44%, Perfil 13%, Estado 27% y Acción 16%.
+ * Se usa table-layout: fixed para impedir que el contenido recalcule los anchos.
+ */
+.access-table {
+    width: 100%;
+    min-width: 720px;
+    table-layout: fixed !important;
+}
+
+.access-table-columns col:nth-child(1) {
+    width: 44% !important;
+}
+
+.access-table-columns col:nth-child(2) {
+    width: 13% !important;
+}
+
+.access-table-columns col:nth-child(3) {
+    width: 27% !important;
+}
+
+.access-table-columns col:nth-child(4) {
+    width: 16% !important;
+}
+
+/* Refuerzo por celda para evitar que otras reglas globales cambien la tabla. */
+.access-table th:nth-child(1),
+.access-table td:nth-child(1) {
+    width: 44% !important;
+    text-align: left;
+}
+
+.access-table th:nth-child(2),
+.access-table td:nth-child(2) {
+    width: 13% !important;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.access-table th:nth-child(3),
+.access-table td:nth-child(3) {
+    width: 27% !important;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.access-table th:nth-child(4),
+.access-table td:nth-child(4) {
+    width: 16% !important;
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* El contenido del usuario termina aproximadamente en la primera guía roja. */
+.access-user-cell {
+    width: 100%;
+    max-width: 300px;
+}
+
+.access-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f8fafc;
+    box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.access-table th {
+    padding: 0.65rem 1rem;
+    color: #64748b;
+    font-size: 0.5625rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.access-table td {
+    height: 58px;
+    padding: 0.55rem 1rem;
+    vertical-align: middle;
+}
+
+.access-table tbody tr {
+    transition: background-color 150ms ease;
+}
+
+.access-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.access-role,
+.access-status {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.access-role {
+    min-width: 92px;
+    justify-content: center;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.access-role--admin {
+    border-color: #cbd5e1;
+    background: #f1f5f9;
+    color: #334155;
+}
+
+.access-role--editor {
+    border-color: #fed7aa;
+    background: #fff7ed;
+    color: #c2410c;
+}
+
+.access-status {
+    gap: 0.4rem;
+    color: #475569;
+}
+
+.access-status span {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: #94a3b8;
+}
+
+.access-status--active {
+    color: #047857;
+}
+
+.access-status--active span {
+    background: #10b981;
+}
+
+.access-edit-button {
+    display: inline-flex;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    padding: 0 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: #ffffff;
+    color: #334155;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.access-edit-button:hover {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.access-dialog {
+    width: min(560px, calc(100vw - 2rem));
+    max-width: none;
+    max-height: calc(100vh - 2rem);
+    margin: auto;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: transparent;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+}
+
+.access-dialog::backdrop {
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(2px);
+}
+
+.access-dialog-card {
+    display: flex;
+    max-height: calc(100vh - 2rem);
+    flex-direction: column;
+    background: #ffffff;
+}
+
+.access-dialog-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.access-dialog-close {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    color: #64748b;
+}
+
+.access-dialog-close:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.access-dialog-body {
+    overflow-y: auto;
+    padding: 1.1rem 1.25rem;
+}
+
+.access-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+
+.access-field-label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: #64748b;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.access-control {
+    display: block;
+    width: 100%;
+    height: 38px;
+    padding: 0 0.7rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: #ffffff;
+    color: #1e293b;
+    font-size: 0.75rem;
+    font-weight: 600;
+    outline: none;
+}
+
+.access-control::placeholder {
+    color: #94a3b8;
+    font-weight: 400;
+}
+
+.access-control:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 1px #2563eb;
+}
+
+.access-control:disabled {
+    cursor: not-allowed;
+    border-color: #e2e8f0;
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+body.access-dialog-open {
+    overflow: hidden;
+}
+
+@media (max-width: 767px) {
+    .access-table-wrap {
+        max-height: none;
+        min-height: 0;
+    }
+
+    .access-table th,
+    .access-table td {
+        padding-right: 0.75rem;
+        padding-left: 0.75rem;
+    }
+}

@@ -1,0 +1,221 @@
+﻿html.preload {
+    visibility: hidden;
+    opacity: 0;
+}
+
+html.app-ready {
+    visibility: visible;
+    opacity: 1;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    background: #f8fafc;
+    color: #1e293b;
+    font-family: 'Source Sans 3', 'Segoe UI', sans-serif;
+    font-size: 16px;
+    letter-spacing: -0.005em;
+}
+
+body {
+    min-height: 100vh;
+    border-top: 4px solid #0056b3;
+}
+
+.app-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: #f8fafc;
+}
+
+.app-header-fallback {
+    height: 76px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #ffffff;
+}
+
+.font-logo {
+    font-family: 'Exo 2', sans-serif;
+    font-weight: 900;
+    transform: scaleY(1.05);
+}
+
+.tsm-page {
+    width: 100%;
+    padding-bottom: 2rem;
+    color: #0f172a;
+}
+
+.tsm-page-header {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    overflow: hidden;
+    padding: 1rem 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #2563eb;
+    border-radius: 0.75rem;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.tsm-page-icon {
+    display: flex;
+    width: 3rem;
+    height: 3rem;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    background: #f8fafc;
+    color: #1d4ed8;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.tsm-kicker,
+.tsm-field-label {
+    color: #64748b;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.tsm-page-title {
+    color: #172554;
+    font-size: 1.125rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+.tsm-page-subtitle {
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.35rem;
+}
+
+.tsm-panel {
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.625rem;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.tsm-panel-header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+
+.tsm-control {
+    height: 2.375rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.375rem;
+    background: #ffffff;
+    color: #1e293b;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    outline: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.tsm-control:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 1px #2563eb;
+}
+
+.tsm-button {
+    display: inline-flex;
+    min-height: 2.375rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0 0.875rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.tsm-button-primary {
+    border: 1px solid #1e40af;
+    background: #1d4ed8;
+    color: #ffffff;
+}
+
+.tsm-button-primary:hover { background: #1e40af; }
+
+.tsm-button-secondary {
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #334155;
+}
+
+.tsm-button-secondary:hover {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+@media (max-width: 640px) {
+    .user-dropdown-menu {
+        left: auto !important;
+        right: 0 !important;
+        transform: none !important;
+    }
+
+    .tsm-page-header {
+        align-items: flex-start;
+        padding: 0.875rem 1rem;
+    }
+
+    .tsm-page-icon { display: none; }
+}
+
+.bg-blueprint {
+    background-color: #ffffff;
+    background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+.toast-enter {
+    animation: toast-enter 0.28s ease-out forwards;
+}
+
+.toast-leave {
+    animation: toast-leave 0.25s ease-in forwards;
+}
+
+@keyframes toast-enter {
+    from {
+        opacity: 0;
+        transform: translateY(18px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes toast-leave {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(18px);
+    }
+}

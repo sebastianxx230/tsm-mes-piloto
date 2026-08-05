@@ -1,0 +1,363 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Producción - {{ ot.ot }}{% endblock %}
+{% block page_title %}Avance de Producción{% endblock %}
+{% block page_subtitle %}Levantamiento de información en planta{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/produccion.css') }}?v=3.3.0">
+{% endblock %}
+
+{% block content %}
+{% set can_edit = current_user.rol in ['admin', 'editor'] %}
+<div id="toast-container" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[99999] flex flex-col gap-2 pointer-events-none"></div>
+
+{% if can_edit %}
+<div id="modal-nuevo-pl" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-200">
+    <div class="bg-white border border-slate-200 rounded-xl max-w-sm w-full shadow-2xl transform scale-95 transition-all duration-200 overflow-hidden" id="box-nuevo-pl">
+        <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <h3 class="font-black text-[14px] text-slate-800 tracking-tight">Nueva Lista de Empaque</h3>
+            <button onclick="cerrarModalPL('modal-nuevo-pl', 'box-nuevo-pl')" class="text-slate-400 hover:text-red-600 transition-colors"><span class="material-symbols-rounded block text-[20px]">close</span></button>
+        </div>
+        <div class="p-5">
+            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Nombre de la Pestaña / Lote</label>
+            <input type="text" id="input-nuevo-pl" class="w-full h-10 px-3 border border-slate-300 rounded-lg text-[13px] font-bold text-slate-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all shadow-sm uppercase" onkeydown="if(event.key === 'Enter') guardarNuevoPL()">
+        </div>
+        <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+            <button onclick="cerrarModalPL('modal-nuevo-pl', 'box-nuevo-pl')" class="px-4 py-2 bg-white border border-slate-300 text-slate-600 font-bold text-[12px] rounded-lg hover:bg-slate-50 transition-colors shadow-sm">Cancelar</button>
+            <button onclick="guardarNuevoPL()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[12px] rounded-lg transition-colors shadow-sm">Crear Pestaña</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if current_user.rol == 'admin' %}
+<div id="modal-renombrar-pl" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-200">
+    <div class="bg-white border border-slate-200 rounded-xl max-w-sm w-full shadow-2xl transform scale-95 transition-all duration-200 overflow-hidden" id="box-renombrar-pl">
+        <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <h3 class="font-black text-[14px] text-slate-800 tracking-tight">Renombrar Lista de Empaque</h3>
+            <button onclick="cerrarModalPL('modal-renombrar-pl', 'box-renombrar-pl')" class="text-slate-400 hover:text-red-600 transition-colors"><span class="material-symbols-rounded block text-[20px]">close</span></button>
+        </div>
+        <div class="p-5">
+            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Nuevo Nombre</label>
+            <input type="text" id="input-renombrar-pl" class="w-full h-10 px-3 border border-slate-300 rounded-lg text-[13px] font-bold text-slate-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all shadow-sm uppercase" onkeydown="if(event.key === 'Enter') guardarRenombrePL()">
+        </div>
+        <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+            <button onclick="cerrarModalPL('modal-renombrar-pl', 'box-renombrar-pl')" class="px-4 py-2 bg-white border border-slate-300 text-slate-600 font-bold text-[12px] rounded-lg hover:bg-slate-50 transition-colors shadow-sm">Cancelar</button>
+            <button onclick="guardarRenombrePL()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[12px] rounded-lg transition-colors shadow-sm">Guardar Nombre</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+
+<div id="save-confirm-overlay" class="production-confirm-overlay hidden opacity-0" aria-hidden="true">
+    <section class="production-confirm-dialog scale-95" role="dialog" aria-modal="true" aria-labelledby="save-confirm-title">
+        <div class="production-confirm-icon"><span class="material-symbols-rounded">save</span></div>
+        <div class="production-confirm-copy">
+            <p class="tsm-kicker">Confirmar guardado</p>
+            <h2 id="save-confirm-title">Reemplazar información del lote</h2>
+            <p id="save-confirm-description"></p>
+            <div class="production-confirm-summary">
+                <span>Elementos de la lista</span><strong id="save-confirm-count">0</strong>
+            </div>
+            <p class="production-confirm-note"><span class="material-symbols-rounded">shield</span> Si otra persona modificó esta lista, el sistema bloqueará el reemplazo.</p>
+        </div>
+        <footer>
+            <button type="button" class="tsm-button tsm-button-secondary" data-save-confirm-cancel>Cancelar</button>
+            <button type="button" class="tsm-button tsm-button-primary" data-save-confirm-accept>Guardar cambios</button>
+        </footer>
+    </section>
+</div>
+
+<div id="chat-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] opacity-0 pointer-events-none transition-all duration-300" onclick="toggleChat()"></div>
+<div id="chat-drawer" class="fixed top-0 right-0 h-full w-full sm:w-[360px] bg-white shadow-2xl z-[101] transform translate-x-full transition-transform duration-300 flex flex-col">
+    <div class="p-4 bg-slate-900 text-white flex justify-between items-center shadow-md z-10 shrink-0">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-rounded">forum</span>
+            <div><h3 class="text-[14px] font-black leading-tight">Mensajes OT</h3><p class="text-[10px] text-slate-300 font-medium">Consultas y coordinaciones</p></div>
+        </div>
+        <button onclick="toggleChat()" class="text-slate-300 hover:text-white transition bg-slate-800 hover:bg-slate-700 p-1.5 rounded-md"><span class="material-symbols-rounded text-[20px]">close</span></button>
+    </div>
+    <div class="shrink-0 border-b border-blue-100 bg-blue-50 px-4 py-1.5 text-center">
+        <span class="text-[9px] font-bold uppercase tracking-widest text-blue-700"><span class="material-symbols-rounded text-[11px] align-text-bottom">forum</span> Consultas, dudas y coordinación de la OT</span>
+    </div>
+    <div id="chat-history" class="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50 flex flex-col"></div>
+    {% if can_edit %}
+    <div class="p-3 bg-white border-t border-slate-200 shrink-0">
+        <div class="flex items-end gap-2 bg-slate-50 border border-slate-200 rounded-xl p-1 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+            <textarea id="chat-input" rows="1" placeholder="Escribe un mensaje..." class="w-full bg-transparent text-[13px] text-slate-700 p-2 outline-none resize-none overflow-hidden" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'" onkeydown="if(event.key === 'Enter' && !event.shiftKey){ event.preventDefault(); enviarMensaje(); }"></textarea>
+            <button onclick="enviarMensaje()" class="w-9 h-9 flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center transition shadow-sm mb-0.5 mr-0.5"><span class="material-symbols-rounded text-[20px]">send</span></button>
+        </div>
+    </div>
+    {% else %}
+    <div class="border-t border-slate-200 bg-slate-100 px-4 py-3 text-center text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        La bitácora está disponible en modo consulta
+    </div>
+    {% endif %}
+</div>
+
+
+<div id="detalle-overlay" class="production-detail-overlay hidden opacity-0" aria-hidden="true">
+    <section class="production-detail-dialog scale-95" id="detalle-modal-box" role="dialog" aria-modal="true" aria-labelledby="detalle-modal-title" tabindex="-1">
+        <header class="production-detail-header">
+            <div>
+                <p>Ficha operativa del elemento</p>
+                <h2 id="detalle-modal-title">Detalle del elemento</h2>
+            </div>
+            <button type="button" class="production-detail-close" onclick="cerrarDetalle()" aria-label="Cerrar detalle">
+                <span class="material-symbols-rounded" aria-hidden="true">close</span>
+            </button>
+        </header>
+
+        <div class="production-detail-body">
+            <section class="production-detail-summary" aria-label="Resumen del elemento">
+                <div class="production-detail-identity">
+                    <span>Elemento</span>
+                    <h3 id="det-marca">XV-1</h3>
+                    <p id="det-desc">ANCLAJE</p>
+                </div>
+
+                <dl class="production-detail-specs">
+                    <div><dt>Longitud</dt><dd id="det-long">800.0 mm</dd></div>
+                    <div><dt>Cantidad</dt><dd id="det-cant">1</dd></div>
+                </dl>
+
+                <div class="production-detail-progress">
+                    <div class="production-detail-progress-heading">
+                        <div><span>Avance del elemento</span><strong id="det-porcentaje-txt">0.0%</strong></div>
+                        <span class="production-detail-state" id="det-estado-badge">EN PROCESO</span>
+                    </div>
+                    <div class="production-detail-progress-track" role="progressbar" aria-label="Avance del elemento" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="det-porcentaje-track">
+                        <span id="det-porcentaje-bar" style="width: 0%"></span>
+                    </div>
+                </div>
+            </section>
+
+            <div class="production-detail-grid">
+                <section class="production-detail-panel production-detail-process-panel">
+                    <header class="production-detail-panel-header">
+                        <div><p>Avance registrado</p><h4>Estado de procesos</h4></div>
+                        <div class="production-detail-legend" aria-label="Leyenda de estados">
+                            <span><i class="is-complete"></i>Completado</span>
+                            <span><i class="is-progress"></i>En proceso</span>
+                            <span><i></i>Pendiente / N.A.</span>
+                        </div>
+                    </header>
+                    <div class="production-detail-table-wrap">
+                        <table class="production-detail-table">
+                            <thead><tr><th>Proceso</th><th>Estado</th><th>Prog.</th><th>Real</th><th>% Av.</th></tr></thead>
+                            <tbody id="det-tabla-procesos"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <aside class="production-detail-panel production-detail-assignment-panel">
+                    <header class="production-detail-panel-header">
+                        <div><p>{{ 'Control operativo' if can_edit else 'Consulta operativa' }}</p><h4>{{ 'Asignación por proceso' if can_edit else 'Personal registrado' }}</h4></div>
+                    </header>
+                    <div class="production-detail-assignments" id="det-cards-procesos"></div>
+                </aside>
+            </div>
+        </div>
+
+        <footer class="production-detail-footer">
+            <span>{% if can_edit %}Los cambios de aplicación y operario se guardan al modificarlos.{% else %}Esta ficha se muestra en modo de solo lectura.{% endif %}</span>
+            <button type="button" onclick="cerrarDetalle()">Cerrar</button>
+        </footer>
+    </section>
+</div>
+
+
+<div class="tsm-page production-page animate-fade-in font-sans">
+
+    <div class="tsm-page-header mb-4 flex-col items-start xl:flex-row xl:items-center">
+        <div class="flex w-full items-start gap-4 xl:w-auto md:items-center">
+            <div class="tsm-page-icon"><span class="material-symbols-rounded text-2xl">precision_manufacturing</span></div>
+            <div class="w-full">
+                <p class="tsm-kicker mb-1">Control operativo por elemento</p>
+                <h1 class="tsm-page-title">Avance de Producción</h1>
+                <div class="flex flex-wrap items-center gap-2 text-[11px] font-bold mt-1"><span class="text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">OT {{ ot.ot }}</span><span class="text-slate-300 hidden sm:inline">•</span><span class="text-slate-600 break-words">{{ ot.cliente }}</span></div>
+                <div class="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2 text-[11px] sm:text-[12px] font-medium mt-1 text-slate-600"><span class="font-bold text-slate-700 shrink-0">Estructura:</span><span class="line-clamp-2 sm:line-clamp-none text-slate-500" title="{{ ot.descripcion }}">{{ ot.descripcion }}</span></div>
+            </div>
+        </div>
+        <div class="flex w-full flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 sm:justify-end xl:w-auto xl:border-t-0 xl:pt-0">
+            <div class="production-dates flex-1 sm:flex-none">
+                <div class="production-date-block">
+                    <span>Inicio registrado</span>
+                    <strong>{{ ot.fecha_iniciado.strftime('%d/%m/%Y') if ot.fecha_iniciado else 'Sin fecha' }}</strong>
+                </div>
+                <div class="production-date-divider"></div>
+                <label class="production-date-block production-date-editable" for="fecha-termino-input">
+                    <span>Fecha de término</span>
+                    <input id="fecha-termino-input" type="date" value="{{ ot.fecha_termino.isoformat() if ot.fecha_termino else '' }}" min="{{ ot.fecha_iniciado.isoformat() if ot.fecha_iniciado else '' }}" {% if not can_edit %}disabled{% endif %} onchange="guardarFechaTermino(this)">
+                </label>
+            </div>
+            <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="tsm-button tsm-button-secondary">
+                <span class="material-symbols-rounded text-[18px]">monitoring</span> Seguimiento
+            </a>
+            <button type="button" onclick="toggleChat()" class="tsm-button tsm-button-secondary relative"><span class="material-symbols-rounded text-[19px]">forum</span> Mensajes</button>
+        </div>
+    </div>
+
+    {% if not can_edit %}
+    <div class="mb-4 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-blue-900">
+        <span class="material-symbols-rounded text-[21px]">visibility</span>
+        <div>
+            <p class="text-[12px] font-black">Modo lectura</p>
+            <p class="mt-0.5 text-[11px] leading-5 text-blue-700">Puedes consultar avances, elementos y bitácora. Los controles que modifican producción están reservados para editores y administradores.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="mb-4 flex min-h-[48px] items-end gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-white px-2 pt-2 shadow-sm hide-scrollbar" id="tabs-container">
+    </div>
+
+    <div id="empty-tabs-state" class="bg-white rounded-xl p-10 text-center shadow-sm border border-slate-200 hidden">
+        <span class="material-symbols-rounded text-[48px] text-slate-300 mb-2">post_add</span>
+        <h3 class="font-bold text-slate-700 mt-2 text-[15px]">Sin Listas de Empaque</h3>
+        <p class="text-[12px] text-slate-500 {% if can_edit %}mb-5{% endif %}">{% if can_edit %}Esta OT no tiene Packing Lists. Crea el primero para subir el Excel.{% else %}Esta OT todavía no tiene listas de empaque registradas.{% endif %}</p>
+        {% if can_edit %}
+        <button onclick="abrirModalPL('modal-nuevo-pl', 'box-nuevo-pl', 'input-nuevo-pl')" class="bg-blue-600 hover:bg-blue-700 transition text-white px-5 py-2.5 rounded-lg font-bold text-[12px] shadow-sm">
+            <span class="material-symbols-rounded text-[16px] align-middle mr-1">add</span> Crear Packing List
+        </button>
+        {% endif %}
+    </div>
+
+    <div id="main-content" class="hidden">
+        <!-- KPIs -->
+        <div class="kpi-bar mb-2" id="kpi-section">
+            <div class="flex min-h-[58px] min-w-[132px] flex-shrink-0 flex-col justify-center rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 shadow-sm">
+                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Avance Lote</span>
+                <span class="text-xl font-black text-white leading-none" id="global-avance-total">0.0%</span>
+            </div>
+
+            <!-- KPI ABA -->
+            <div class="relative flex min-h-[58px] min-w-[118px] flex-shrink-0 flex-col justify-center overflow-hidden rounded-lg border border-blue-200 bg-white px-4 py-2 shadow-sm">
+                <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                <span class="text-[9px] font-bold text-blue-600 uppercase tracking-widest mb-0.5 pl-1">ABA (Compras)</span>
+                <span class="text-xl font-black text-slate-800 leading-none pl-1" id="global-avance-aba">0.0%</span>
+            </div>
+
+            <div class="w-px h-10 bg-slate-200 mx-2 flex-shrink-0"></div>
+
+            {% for proc in [
+            {'id':'hab', 'name':'HAB', 'full':'Habilitado', 'w':12, 'has_toggle':false, 'toggle_on':true},
+            {'id':'arm', 'name':'ARM', 'full':'Armado', 'w':24, 'has_toggle':false, 'toggle_on':true},
+            {'id':'sol', 'name':'SOL', 'full':'Soldado', 'w':28, 'has_toggle':false, 'toggle_on':true},
+            {'id':'lim', 'name':'LIM', 'full':'Limpieza', 'w':12, 'has_toggle':false, 'toggle_on':true},
+            {'id':'lib', 'name':'LIB', 'full':'Liberación', 'w':6, 'has_toggle':false, 'toggle_on':true},
+            {'id':'gal', 'name':'GAL', 'full':'Galvanizado', 'w':6, 'has_toggle':false, 'toggle_on':true},
+            {'id':'are', 'name':'ARE', 'full':'Arenado', 'w':6, 'has_toggle':true, 'toggle_on':false},
+            {'id':'pin', 'name':'PIN', 'full':'Pintado', 'w':6, 'has_toggle':true, 'toggle_on':false}
+            ] %}
+            <div class="kpi-mini-card {% if not proc.toggle_on %}inactive{% else %}active{% endif %}" id="card-{{ proc.id }}">
+                {% if proc.has_toggle and can_edit %}<label class="switch-mini" title="Activar/Desactivar {{ proc.full }}"><input type="checkbox" {% if proc.toggle_on %}checked{% endif %} onchange="toggleProcess('{{ proc.id }}')"><span class="slider-mini"></span></label>{% endif %}
+                <span class="text-[10px] font-bold text-slate-500 uppercase" title="{{ proc.full }}">{{ proc.name }}</span>
+                <div class="flex items-end justify-between mt-1"><span class="text-[15px] font-black text-slate-800 leading-none" id="box-{{ proc.id }}">0.0%</span><span class="text-[9px] font-bold text-slate-400 {% if can_edit %}cursor-pointer hover:text-blue-600 transition-colors{% endif %}" {% if can_edit %}title="Doble clic para editar" ondblclick="editarPeso(this, '{{ proc.id }}')"{% endif %}>P: <span id="peso-text-{{ proc.id }}">{{ proc.w }}</span></span></div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div id="table-module" class="relative flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all">
+            <div class="relative z-50 flex flex-col items-start justify-between gap-3 border-b border-slate-200 bg-slate-50/70 p-3 md:flex-row md:items-center">
+                <div class="flex h-9 w-full shrink-0 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 md:w-64">
+                    <span class="material-symbols-rounded text-slate-400 text-[16px]">search</span>
+                    <input type="text" id="searchMatriz" placeholder="Buscar elemento" onkeyup="filtrarMatriz()" class="w-full text-[12px] bg-transparent border-none outline-none text-slate-700 font-medium">
+                </div>
+                <div class="flex items-center gap-2 w-full md:w-auto overflow-x-auto hide-scrollbar pb-1 md:pb-0 shrink-0">
+                    <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-1.5 rounded-md whitespace-nowrap"><span class="material-symbols-rounded text-[14px] text-red-500">warning</span> <span class="hidden sm:inline">Faltantes</span></div>
+                    <span class="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-1.5 rounded-md border border-slate-200 whitespace-nowrap" id="contador-piezas">0 Regs</span>
+                    <span id="draft-status" class="hidden whitespace-nowrap rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-amber-700">
+                        Excel pendiente de guardar
+                    </span>
+                    <div class="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
+
+                    {% if can_edit %}
+                    <input type="file" id="input-excel-packing" class="hidden" accept=".xlsx, .xls" onchange="importarPackingList(event)">
+                    <button id="btn-subir-excel" type="button" onclick="document.getElementById('input-excel-packing').click()" class="tsm-button tsm-button-secondary shrink-0 whitespace-nowrap">
+                        <span class="material-symbols-rounded text-[18px]">upload_file</span> Subir Excel
+                    </button>
+                    <button id="btn-guardar-avances" type="button" onclick="guardarPackingListBD()" class="tsm-button tsm-button-primary shrink-0 whitespace-nowrap">
+                        <span class="material-symbols-rounded text-[18px]">save</span> Guardar Avances
+                    </button>
+                    {% endif %}
+
+                    {% if current_user.rol == 'admin' %}
+                    <button type="button" onclick="prepararRenombrarPL()" class="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border border-blue-200 bg-white text-blue-700 shadow-sm transition-colors hover:bg-blue-700 hover:text-white" title="Renombrar pestaña">
+                        <span class="material-symbols-rounded text-[18px]">edit</span>
+                    </button>
+                    <button type="button" onclick="eliminarMatrizActual()" class="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border border-red-200 bg-white text-red-600 shadow-sm transition-colors hover:bg-red-600 hover:text-white" title="Archivar packing list">
+                        <span class="material-symbols-rounded text-[18px]">archive</span>
+                    </button>
+                    {% endif %}
+
+                    <div class="w-px h-5 bg-slate-200 mx-1 hidden md:block shrink-0"></div>
+                    <button type="button" onclick="toggleFullscreen()" id="btn-fullscreen" class="hidden h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-100 hover:text-slate-800 md:flex"><span class="material-symbols-rounded text-[18px]" id="icon-fullscreen">fullscreen</span></button>
+                </div>
+            </div>
+
+            <div class="matrix-wrapper bg-white relative">
+                <table class="w-full text-left border-collapse bg-white" style="min-width: 1750px;">
+                    <thead class="sticky top-0 z-40 bg-slate-50">
+                    <tr class="text-[9px] font-bold text-slate-600 uppercase tracking-widest text-center sticky-top-1 bg-slate-50">
+                        <th colspan="6" class="py-2.5 border-b border-r border-slate-200 sticky-corner-l bg-slate-50" style="min-width: 480px; max-width: 480px;">INF GENERAL DEL ELEMENTO</th>
+                        <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-hab col-hab">HABILITADO</th>
+                        <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-arm col-arm">ARMADO</th>
+                        <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-sol col-sol">SOLDADO</th>
+                        <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-lim col-lim">LIMPIEZA</th>
+                        <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-lib col-lib">LIBERACIÓN</th>
+                        <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-gal col-gal">GALVANIZADO</th>
+                        <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-are col-are" style="display:none;">ARENADO</th>
+                        <th colspan="3" class="py-2.5 border-b border-l border-slate-200 border-top-pin col-pin" style="display:none;">PINTADO</th>
+                        <th colspan="2" class="py-2.5 border-b border-l border-slate-200 border-top-des bg-slate-50 sticky-corner-des">DESPACHO</th>
+                        <th rowspan="2" class="py-2.5 border-b border-slate-800 bg-slate-900 text-white sticky-corner-r align-middle">AVANCE<br>TOTAL</th>
+                    </tr>
+
+                    <tr class="bg-white text-slate-400 text-[9px] font-bold uppercase border-b-2 border-slate-200 text-center sticky-top-2">
+                        <th class="px-1 py-1.5 border-r border-slate-100 sticky-c-alert bg-white text-center"><span class="material-symbols-rounded text-[14px]">warning</span></th>
+                        <th class="px-2 py-1.5 border-r border-slate-100 sticky-c1 bg-white">Marca</th>
+                        <th class="px-2 py-1.5 border-r border-slate-100 sticky-c2 bg-white">Cant</th>
+                        <th class="px-3 py-1.5 border-r border-slate-100 sticky-c3 bg-white text-left">Descripción</th>
+                        <th class="px-1 py-1.5 border-r border-slate-100 sticky-c4 bg-white">Long mm</th>
+                        <th class="px-1 py-1.5 border-r border-slate-200 sticky-c5 bg-white shadow-right text-blue-600 w-[40px]">
+                            <span class="material-symbols-rounded text-[16px] block">more_horiz</span>
+                        </th>
+
+                        {% for proc in ['HAB', 'ARM', 'SOL', 'LIM', 'LIB', 'GAL', 'ARE', 'PIN'] %}
+                        {% set display = 'display:none;' if proc in ['ARE', 'PIN'] else '' %}
+                        <th class="px-1 py-1.5 border-r border-slate-100 w-[45px] col-{{ proc|lower }}" style="{{display}}">Prog</th>
+                        <th class="px-1 py-1.5 border-r border-slate-100 w-[45px] text-blue-600 col-{{ proc|lower }}" style="{{display}}">Real</th>
+                        <th class="px-1 py-1.5 border-r border-slate-200 w-[45px] text-emerald-600 bg-emerald-50/30 col-{{ proc|lower }}" style="{{display}}">% Av</th>
+                        {% endfor %}
+
+                        <th class="px-2 py-1.5 border-l border-r border-slate-200 sticky-r3 bg-white">Enviar</th>
+                        <th class="px-2 py-1.5 border-r border-slate-200 sticky-r2 bg-slate-50">Salida</th>
+                    </tr>
+                    </thead>
+
+                    <tbody class="text-[11px] divide-y divide-slate-100 text-slate-700 font-semibold bg-white" id="matriz-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.ProduccionConfig = {
+        otId: {{ ot.item }},
+    currentUserId: {{ current_user.id|tojson }},
+    isAdmin: {% if current_user.rol == 'admin' %}true{% else %}false{% endif %},
+    canEdit: {% if can_edit %}true{% else %}false{% endif %},
+    currentRole: {{ current_user.rol|tojson }},
+    otOt: {{ ot.ot|tojson }},
+    otVersion: {{ ot.version|tojson }},
+    processWeights: {{ ot.to_dict().process_weights|tojson }},
+    activeProcesses: {{ ot.to_dict().active_processes|tojson }}
+    };
+</script>
+
+<script src="{{ url_for('static', filename='js/produccion.js') }}?v=3.5.0"></script>
+{% endblock %}

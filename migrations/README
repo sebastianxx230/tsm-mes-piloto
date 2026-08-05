@@ -1,0 +1,4 @@
+Migraciones de esquema administradas con Flask-Migrate/Alembic.
+
+Use `flask db upgrade` para una base nueva o ya versionada. Para adoptar una
+base existente, siga primero el procedimiento documentado en README.md.

@@ -1,0 +1,138 @@
+﻿{% extends "base.html" %}
+
+{% set hide_header = True %}
+
+{% block title %}Iniciar Sesión{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="fixed inset-0 z-50 flex w-full bg-slate-50 font-sans antialiased">
+
+    <div class="login-left-panel relative hidden h-full w-[46%] flex-col overflow-hidden bg-slate-900 lg:flex">
+
+        <div class="absolute inset-0">
+            <div class="absolute inset-0 bg-cover bg-no-repeat opacity-70 bg-[15%_center]"
+                 style="background-image: url('{{ url_for('static', filename='images/imglogin.jpg') }}');">
+            </div>
+            <div class="absolute inset-0 bg-slate-950/75"></div>
+            <div class="absolute inset-y-0 right-0 w-1 bg-blue-600"></div>
+        </div>
+
+
+        <div class="relative z-10 flex h-full flex-col justify-start pt-[15vh] px-12 xl:px-20">
+            <div>
+                <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-white xl:text-[40px]">
+                    Control y <span class="text-blue-400">seguimiento</span><br>de OTs.
+                </h2>
+
+                <p class="mt-6 max-w-md text-[15px] font-medium leading-relaxed text-slate-300">
+                    Centraliza la fabricación, documentación y reportes en un entorno seguro y de alta disponibilidad.
+                </p>
+            </div>
+        </div>
+    </div>
+
+
+    <main class="relative flex h-full w-full flex-col items-center justify-center bg-[#f4f7fa] px-4 lg:w-[54%] lg:px-12 xl:px-24">
+
+        <div class="absolute left-0 top-0 h-1.5 w-full bg-blue-700 lg:hidden"></div>
+
+        <div class="login-right-content flex w-full max-w-[420px] flex-col items-center py-6">
+            
+            <div class="mb-5 flex items-center justify-center gap-3 text-left">
+                <img src="{{ url_for('static', filename='images/images.png') }}" alt="Top Solution Metal" class="h-12 w-12 object-contain">
+                <div class="border-l border-slate-300 pl-3">
+                    <span class="block text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Top Solution Metal</span>
+                    <span class="mt-0.5 block text-[14px] font-bold text-slate-800">Sistema de Producción</span>
+                </div>
+            </div>
+            
+            <div class="w-full rounded-lg border border-slate-300 border-l-4 border-l-blue-700 bg-white px-8 py-8 shadow-sm sm:px-10">
+
+                <div class="mb-6 text-center">
+                    <h1 class="text-[20px] font-extrabold tracking-tight text-slate-900">
+                        Acceso al sistema
+                    </h1>
+                    <p class="mt-1 text-[12px] font-medium text-slate-500">
+                        Inicia sesión para continuar.
+                    </p>
+                </div>
+
+                <form method="POST" action="{{ url_for('login_bp.login') }}" class="space-y-5">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="space-y-4">
+                        <div>
+                            <label for="username" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
+                                Usuario
+                            </label>
+
+                            <div class="relative">
+                                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                                    <span class="material-symbols-rounded text-[18px]">person</span>
+                                </div>
+
+                                <input id="username"
+                                       type="text"
+                                       name="username"
+                                       required
+                                       autofocus
+                                       autocomplete="username"
+                                       value="{{ request.form.get('username', '') }}"
+                                       placeholder="Ingresa tu usuario"
+                                       class="w-full h-[40px] pl-9 pr-3 border border-slate-300 rounded-md text-[13px] font-semibold text-slate-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all placeholder:text-slate-400 placeholder:font-medium">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label for="password" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
+                                Contraseña
+                            </label>
+
+                            <div class="relative">
+                                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                                    <span class="material-symbols-rounded text-[18px]">lock</span>
+                                </div>
+
+                                <input id="password"
+                                       type="password"
+                                       name="password"
+                                       required
+                                       autocomplete="current-password"
+                                       placeholder="Ingresa tu contraseña"
+                                       class="w-full h-[40px] pl-9 pr-10 border border-slate-300 rounded-md text-[13px] font-semibold text-slate-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all placeholder:text-slate-400 placeholder:font-medium">
+
+                                <button type="button"
+                                        id="togglePassword"
+                                        aria-label="Mostrar contraseña"
+                                        class="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-sm text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none">
+                                    <span id="eyeClosed" class="material-symbols-rounded text-[18px]">visibility</span>
+                                    <span id="eyeOpen" class="material-symbols-rounded hidden text-[18px]">visibility_off</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pt-2">
+                        <button type="submit"
+                                class="flex h-[40px] w-full items-center justify-center rounded-md border border-blue-800 bg-blue-700 px-4 text-[12px] font-bold text-white shadow-sm transition-colors hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1">
+                            Iniciar sesión
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+
+            <div class="mt-6 text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                &copy; 2026 Top Solution Metal
+            </div>
+        </div>
+    </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/login.js') }}"></script>
+
+{% endblock %}

@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Reporte TSM - OT {{ ot.ot }}</title>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600&family=Roboto:wght@400;700&display=swap');
+
+        :root {
+            --tsm-blue: #002B5C;
+            --tsm-red: #D92027;
+            --border-color: #002B5C;
+            --bg-viewer: #e5e7eb;
+            --photo-border: 2px;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 12mm 15mm 14mm 15mm;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            font-size: 11px;
+            margin: 0;
+            padding: 0;
+            background: var(--bg-viewer);
+            color: #222;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            position: relative;
+        }
+        
+
+        .btn-flotante {
+            position: fixed;
+            right: 30px;
+            top: 30px;
+            background-color: var(--tsm-blue);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease, background-color 0.2s ease;
+            z-index: 9999;
+        }
+
+        .btn-flotante:hover {
+            transform: scale(1.05);
+            background-color: #001f44;
+        }
+
+        .btn-flotante svg {
+            width: 18px;
+            height: 18px;
+        }
+        
+
+        .hoja-preview {
+            width: 210mm;
+            background: white;
+            padding: 12mm 15mm 14mm 15mm;
+            margin: 40px 0;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+            border-radius: 2px;
+        }
+
+        table.main-wrapper {
+            width: 100%;
+            border-collapse: collapse;
+            border: none !important;
+        }
+
+        table.main-wrapper > thead > tr > td,
+        table.main-wrapper > tbody > tr > td,
+        table.main-wrapper > tfoot > tr > td {
+            border: none !important;
+            padding: 0;
+        }
+        
+
+        .header-box {
+            display: flex;
+            width: 100%;
+            border: 1px solid var(--border-color);
+            margin-bottom: 15px;
+            background: #fff;
+            min-height: 85px;
+        }
+
+        .header-logo {
+            width: 20%;
+            padding: 5px; 
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .header-logo img {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            object-fit: contain; 
+            display: block;
+        }
+
+        .header-title {
+            width: 60%;
+            text-align: center;
+            padding: 5px 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .header-title h1 {
+            margin: 0;
+            color: var(--tsm-blue);
+            font-size: 16px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .header-title p {
+            margin: 2px 0 0;
+            font-size: 11px;
+            color: #555;
+            font-weight: 700;
+        }
+
+        .header-meta {
+            width: 20%;
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-evenly;
+            padding: 2px 5px 2px 10px;
+            font-size: 10px;
+            line-height: 1.2;
+        }
+
+        .header-meta strong {
+            color: var(--tsm-blue);
+        }
+        
+
+        .section-title-box {
+            background-color: var(--tsm-blue);
+            color: white;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .section-title-box .num {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+        
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
+        }
+
+        .data-table td {
+            border: 1px solid var(--border-color);
+            padding: 5px 8px;
+            vertical-align: middle;
+        }
+
+        .data-table .label {
+            color: var(--tsm-blue);
+            font-weight: 700;
+            width: 15%;
+        }
+
+        .data-table .value {
+            width: 35%;
+            text-transform: uppercase;
+            color: #333;
+        }
+        
+
+        .process-block {
+            width: 100%;
+            margin-bottom: 14px;
+            background: white;
+        }
+
+        .keep-together {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            width: 100%;
+            display: block;
+        }
+
+        .photo-grid {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            background: #fff;
+            border: var(--photo-border) solid var(--border-color);
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+        }
+
+        .photo-grid + .photo-grid,
+        .photo-grid + .keep-together {
+            margin-top: -2px;
+        }
+
+        .photo-cell {
+            flex: 0 0 calc(100% / 3);
+            max-width: calc(100% / 3);
+            height: 165px;
+            background: #fff;
+            overflow: hidden;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-left: var(--photo-border) solid var(--border-color);
+            border-right: var(--photo-border) solid var(--border-color);
+        }
+
+        .photo-cell:first-child:nth-last-child(3),
+        .photo-cell:last-child:nth-child(3) {
+            border-left: none;
+            border-right: none;
+        }
+
+        .photo-cell:last-child:nth-child(2) {
+            border-left: none;
+        }
+
+        .photo-cell img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        
+
+        .process-footer {
+            width: 100%;
+            min-height: 20px;
+            background-color: var(--tsm-blue);
+            color: white;
+            border: var(--photo-border) solid var(--border-color);
+            margin-top: -2px;
+            padding: 2px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 5px;
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1.15;
+            box-sizing: border-box;
+        }
+
+        .process-footer .badge {
+            flex: 0 0 auto;
+            margin: 0;
+            white-space: nowrap;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .process-footer .title {
+            flex: 1 1 auto;
+            margin: 0;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            overflow-wrap: anywhere;
+        }
+        
+
+        tfoot {
+            display: table-footer-group;
+        }
+
+        .footer-spacer {
+            height: 40px;
+            background: transparent;
+        }
+
+        .footer-wrapper {
+            width: 100%;
+            background: white;
+            padding-top: 10px;
+        }
+
+        .footer-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .footer-brand {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--tsm-blue);
+            width: 40%;
+        }
+
+        .footer-contact {
+            font-size: 9px;
+            color: #555;
+            text-align: right;
+            width: 60%;
+            line-height: 1.3;
+        }
+
+        .footer-contact a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .footer-bars {
+            display: flex;
+            height: 6px;
+            margin-top: 6px;
+        }
+
+        .bar-blue {
+            background: var(--tsm-blue);
+            flex: 7;
+        }
+
+        .bar-red {
+            background: var(--tsm-red);
+            flex: 3;
+        }
+        
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+                display: block;
+            }
+
+            .btn-flotante {
+                display: none !important;
+            }
+
+            .hoja-preview {
+                width: 100%;
+                padding: 0;
+                box-shadow: none;
+                margin: 0;
+            }
+
+            html,
+            body {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            
+            .footer-wrapper {
+                position: fixed !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                background-color: white !important;
+                z-index: 9999 !important;
+                box-sizing: border-box !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<button class="no-print btn-flotante" onclick="descargarPDF()" title="Descargar e Imprimir PDF">
+    <svg xmlns="http://www.w3.org/2000/svg"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2.5"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+    </svg>
+    Guardar PDF
+</button>
+
+<div class="hoja-preview">
+    <table class="main-wrapper">
+
+        <thead>
+        <tr>
+            <td>
+                <div class="header-box">
+                    <div class="header-logo">
+                        {% if logo_data_uri %}
+                        <img src="{{ logo_data_uri }}" alt="Logo TSM">
+                        {% else %}
+                        <strong>TSM</strong>
+                        {% endif %}
+                    </div>
+
+                    <div class="header-title">
+                        <h1>REPORTE FOTOGRÁFICO DE FABRICACIÓN</h1>
+                        <p>DEPARTAMENTO DE PRODUCCIÓN</p>
+                    </div>
+
+                    <div class="header-meta">
+                        <div><strong>CÓDIGO:</strong> TSM-PR-FOR-01</div>
+                        <div><strong>VERSIÓN:</strong> 02</div>
+                        <div><strong>FECHA:</strong> 26/05/2026 </div>
+                    </div>
+                </div>
+
+                <div class="section-title-box">
+                    <span class="num">A.</span>
+                    <span>DATOS GENERALES DEL PROYECTO</span>
+                </div>
+
+                <table class="data-table">
+                    <tr>
+                        <td class="label">CLIENTE:</td>
+                        <td class="value">{{ ot.cliente }}</td>
+                        <td class="label">SITE:</td>
+                        <td class="value">-</td>
+                    </tr>
+                    <tr>
+                        <td class="label">ESTRUCTURA:</td>
+                        <td class="value">{{ ot.descripcion }}</td>
+                        <td class="label">ORDEN (OT):</td>
+                        <td class="value">{{ ot.ot }}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">PROCESO:</td>
+                        <td class="value">REPORTE DE PROCESOS</td>
+                        <td class="label">FECHA INICIO:</td>
+                        <td class="value">{{ ot.fecha_iniciado }}</td>
+                    </tr>
+                </table>
+
+                <div class="section-title-box">
+                    <span class="num">B.</span>
+                    <span>REGISTRO FOTOGRÁFICO</span>
+                </div>
+            </td>
+        </tr>
+        </thead>
+
+        <tbody>
+        <tr>
+            <td>
+                {% for proceso in procesos %}
+
+                <div class="process-block">
+
+                    {% set proc_index = loop.index %}
+                    {% set chunks = proceso.imagenes | batch(3) | list %}
+
+                    {% for chunk in chunks %}
+
+                    {% if loop.last %}
+                    <div class="keep-together">
+
+                        <div class="photo-grid">
+                            {% for img in chunk %}
+                            {% if img %}
+                            <div class="photo-cell">
+                                <img src="{{ img.url }}" alt="Evidencia fotográfica">
+                            </div>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+
+                        <div class="process-footer">
+                            <span class="badge">
+                                {{ "%02d"|format(proc_index) }}.
+                            </span>
+
+                            <span class="title">
+                                {% set nombre_limpio = proceso.nombre %}
+
+                                {% if '_' in nombre_limpio %}
+                                    {% set parts = nombre_limpio.split('_', 1) %}
+                                    {% if parts[0].isdigit() %}
+                                        {% set nombre_limpio = parts[1] %}
+                                    {% endif %}
+
+                                {% elif ' ' in nombre_limpio %}
+                                    {% set parts = nombre_limpio.split(' ', 1) %}
+                                    {% if parts[0].isdigit() %}
+                                        {% set nombre_limpio = parts[1] %}
+                                    {% endif %}
+                                {% endif %}
+
+                                {{ nombre_limpio }}
+                            </span>
+                        </div>
+
+                    </div>
+
+                    {% else %}
+
+                    <div class="photo-grid">
+                        {% for img in chunk %}
+                        {% if img %}
+                        <div class="photo-cell">
+                            <img src="{{ img.url }}" alt="Evidencia fotográfica">
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+
+                    {% endif %}
+
+                    {% endfor %}
+
+                </div>
+
+                {% endfor %}
+            </td>
+        </tr>
+        </tbody>
+
+        <tfoot>
+        <tr>
+            <td>
+                <div class="footer-spacer"></div>
+                <div class="footer-wrapper">
+                    <table class="footer-table">
+                        <tr>
+                            <td class="footer-brand">
+                                TOP SOLUTION METAL S.A.C.
+                            </td>
+                            <td class="footer-contact">
+                                Planta: Urb. Fundo, Av. Chacra Cerro MZ C, Comas 15316<br>
+                                Web: <a href="https://www.topsolutionmetal.com">www.topsolutionmetal.com</a>
+                                | Email: <a href="mailto:roxana.cardenas@topsolutionmetal.com">roxana.cardenas@topsolutionmetal.com</a>
+                            </td>
+                        </tr>
+                    </table>
+                    <div class="footer-bars">
+                        <div class="bar-blue"></div>
+                        <div class="bar-red"></div>
+                    </div>
+                </div>
+            </td>
+        </tr>
+        </tfoot>
+
+    </table>
+</div>
+
+<script>
+    function descargarPDF() {
+        setTimeout(() => {
+            window.print();
+        }, 150);
+    }
+</script>
+
+</body>
+</html>

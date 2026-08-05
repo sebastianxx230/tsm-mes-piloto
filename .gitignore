@@ -1,0 +1,16 @@
+﻿credentials.json
+Folder.DotSettings.user
+.idea/
+.env
+*.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.pilot-venv/
+*.sqlite
+.coverage
+htmlcov/
+node_modules/
+public/
+.pip-audit-cache/

@@ -1,0 +1,25 @@
+/* =======================================================
+   === 0. IMPORTACIÓN DE FUENTE PERSONALIZADA (CALUXE) ===
+   ======================================================= */
+
+/* * IMPORTANTE: Debes crear una carpeta 'fonts' dentro de 'static'
+ * y colocar tus archivos de fuente 'Caluxe' allí.
+ * (He comentado la importación de Poppins)
+*/
+/* @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap'); */
+
+@font-face {
+  font-family: 'CALUXE';
+  src: url('../fonts/Caluxe-Regular.woff2') format('woff2'), /* Ajusta este nombre de archivo */
+       url('../fonts/Caluxe-Regular.woff') format('woff'); /* Ajusta este nombre de archivo */
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'CALUXE';
+  src: url('../fonts/Caluxe-Bold.woff2') format('woff2'), /* Ajusta este nombre de archivo */
+       url('../fonts/Caluxe-Bold.woff') format('woff'); /* Ajusta este nombre de archivo */
+  font-weight: 700;
+  font-style: normal;
+}
+/* ... (Añade más @font-face para '500' y '600' si los tienes) ... */

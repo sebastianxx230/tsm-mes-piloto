@@ -1,0 +1,550 @@
+{% extends "base.html" %}
+
+{% block title %}Seguimiento - {{ ot.ot }}{% endblock %}
+{% block page_title %}Vista de seguimiento{% endblock %}
+
+{% block head_extra %}
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=6.4.1">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=1.2.0">
+{% endblock %}
+
+{% block content %}
+<div class="tracking-page" data-tracking-url="{{ url_for('gestion_ot_bp.seguimiento_data', id=ot.item) }}">
+    <header class="tracking-order-card" aria-labelledby="tracking-page-title">
+        <div class="tracking-order-main">
+            <div class="tracking-order-icon" aria-hidden="true">
+                <span class="material-symbols-rounded">precision_manufacturing</span>
+            </div>
+            <div class="tracking-order-copy">
+                <p class="tracking-kicker">Sistema de producción</p>
+                <h1 id="tracking-page-title">Seguimiento de producción</h1>
+                <div class="tracking-order-meta" aria-label="Datos principales de la orden">
+                    <span class="tracking-order-code">OT {{ ot.ot }}</span>
+                    <span class="tracking-order-client">{{ ot.cliente or 'Cliente sin registrar' }}</span>
+                    <span class="tracking-meta-date">
+                        <span class="material-symbols-rounded" aria-hidden="true">calendar_today</span>
+                        {{ ot.fecha_iniciado.strftime('%d/%m/%Y') if ot.fecha_iniciado else '-' }}
+                    </span>
+                </div>
+                <p class="tracking-order-description">
+                    <strong>Estructura:</strong>
+                    <span>{{ ot.descripcion or 'Sin descripción registrada' }}</span>
+                </p>
+            </div>
+        </div>
+
+        <nav class="tracking-order-actions" aria-label="Acciones de la orden">
+            <button type="button" class="tracking-action tracking-action-activity" data-open-activity>
+                <span class="material-symbols-rounded" aria-hidden="true">forum</span>
+                <span>Mensajes y actividad</span>
+            </button>
+            <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}" class="tracking-action tracking-action-secondary">
+                <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
+                <span>Volver al catálogo</span>
+            </a>
+            {% if current_user.rol in ['admin', 'editor'] %}
+            <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="tracking-action tracking-action-primary">
+                <span class="material-symbols-rounded" aria-hidden="true">manufacturing</span>
+                <span>Abrir producción</span>
+            </a>
+            {% endif %}
+        </nav>
+    </header>
+
+    <section class="tracking-overview" aria-label="Resumen general de la orden">
+        <article class="tracking-overview-progress">
+            <div class="tracking-overview-icon" aria-hidden="true">
+                <span class="material-symbols-rounded">monitoring</span>
+            </div>
+            <div class="tracking-overview-content">
+                <div class="tracking-overview-heading">
+                    <div>
+                        <p class="tracking-section-kicker">Avance general</p>
+                        <strong id="tracking-overall-progress">{{ '%.1f'|format(tracking.overall_progress) }}%</strong>
+                    </div>
+                    <span class="tracking-status-pill" id="tracking-overall-status">{{ 'Completado' if tracking.overall_progress >= 100 else 'En proceso' }}</span>
+                </div>
+                <div class="tracking-progress tracking-progress-overall" role="progressbar" aria-label="Avance general" aria-valuenow="{{ tracking.overall_progress }}" aria-valuemin="0" aria-valuemax="100">
+                    <span id="tracking-overall-bar" style="width: {{ tracking.overall_progress }}%"></span>
+                </div>
+                <p class="tracking-overview-caption">Progreso consolidado de los elementos con procesos registrados.</p>
+            </div>
+        </article>
+
+        <dl class="tracking-overview-facts">
+            <div>
+                <span class="tracking-fact-icon material-symbols-rounded" aria-hidden="true">deployed_code</span>
+                <div>
+                    <dt>Elementos</dt>
+                    <dd><span id="tracking-completed-summary">{{ tracking.completed_count }}</span><small>/ <span id="tracking-component-count">{{ tracking.component_count }}</span></small></dd>
+                    <span>completados</span>
+                </div>
+            </div>
+            <div>
+                <span class="tracking-fact-icon material-symbols-rounded" aria-hidden="true">inventory_2</span>
+                <div>
+                    <dt>Lotes</dt>
+                    <dd id="tracking-lot-count">{{ tracking.lot_count }}</dd>
+                    <span>registrados</span>
+                </div>
+            </div>
+            <div>
+                <span class="tracking-fact-icon material-symbols-rounded" aria-hidden="true">groups</span>
+                <div>
+                    <dt>Personal</dt>
+                    <dd id="tracking-personnel-count">{{ tracking.personnel|length }}</dd>
+                    <span>personas</span>
+                </div>
+            </div>
+            <div>
+                <span class="tracking-fact-icon material-symbols-rounded" aria-hidden="true">photo_library</span>
+                <div>
+                    <dt>Fotografías</dt>
+                    <dd id="tracking-photo-count">{{ tracking.photos|length }}</dd>
+                    <span>publicadas</span>
+                </div>
+            </div>
+        </dl>
+    </section>
+
+    <section class="tracking-panel tracking-process-panel">
+        <header class="tracking-panel-header">
+            <div class="tracking-panel-title">
+                <span class="material-symbols-rounded" aria-hidden="true">account_tree</span>
+                <div>
+                    <p class="tracking-section-kicker">Estado actual</p>
+                    <h2>Avance por proceso</h2>
+                </div>
+            </div>
+            <div class="tracking-counts" aria-label="Estado de elementos">
+                <span><i class="tracking-dot tracking-dot-complete"></i><b id="tracking-completed-count">{{ tracking.completed_count }}</b> completos</span>
+                <span><i class="tracking-dot tracking-dot-progress"></i><b id="tracking-progress-count">{{ tracking.in_progress_count }}</b> en proceso</span>
+                <span><i class="tracking-dot"></i><b id="tracking-pending-count">{{ tracking.pending_count }}</b> pendientes</span>
+            </div>
+        </header>
+
+        <div class="tracking-process-list">
+            {% for process in tracking.processes %}
+            <article class="tracking-process-card{% if process.progress >= 99.95 %} is-complete{% elif process.progress > 0 %} is-progress{% else %} is-pending{% endif %}" data-process-key="{{ process.key }}">
+                <div class="tracking-process-top">
+                    <div class="tracking-process-name">
+                        <div>
+                            <strong>{{ process.name }}</strong>
+                            <span class="tracking-process-status" data-process-status>{{ process.status }}</span>
+                        </div>
+                    </div>
+                    <b data-process-progress>{{ '%.1f'|format(process.progress) }}%</b>
+                </div>
+                <div class="tracking-progress" data-process-bar role="progressbar" aria-label="{{ process.name }}" aria-valuenow="{{ process.progress }}" aria-valuemin="0" aria-valuemax="100">
+                    <span style="width: {{ process.progress }}%"></span>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="tracking-panel tracking-workspace">
+        <div class="tracking-workspace-bar">
+            <nav class="tracking-workspace-tabs" role="tablist" aria-label="Detalle del seguimiento">
+                <button type="button" class="tracking-workspace-tab is-active" id="tracking-lots-tab" role="tab" aria-selected="true" aria-controls="tracking-lots-panel" data-tracking-view="lots">
+                    <span>Avance por lote</span>
+                    <b id="tracking-lot-tab-count">{{ tracking.lot_count }}</b>
+                </button>
+                <button type="button" class="tracking-workspace-tab" id="tracking-personnel-tab" role="tab" aria-selected="false" aria-controls="tracking-personnel-panel" data-tracking-view="personnel">
+                    <span>Personal</span>
+                    <b id="tracking-personnel-tab-count">{{ tracking.personnel|length }}</b>
+                </button>
+                <button type="button" class="tracking-workspace-tab" id="tracking-photos-tab" role="tab" aria-selected="false" aria-controls="tracking-photos-panel" data-tracking-view="photos">
+                    <span>Fotografías</span>
+                    <b id="tracking-photo-tab-count">{{ tracking.photos|length }}</b>
+                </button>
+                <button type="button" class="tracking-workspace-tab" id="tracking-plans-tab" role="tab" aria-selected="false" aria-controls="tracking-plans-panel" data-tracking-view="plans">
+                    <span>Planos</span>
+                    <b id="tracking-plans-tab-count">0</b>
+                </button>
+                <button type="button" class="tracking-workspace-tab" id="tracking-documents-tab" role="tab" aria-selected="false" aria-controls="tracking-documents-panel" data-tracking-view="documents">
+                    <span>Otros documentos</span>
+                    <b id="tracking-documents-tab-count">0</b>
+                </button>
+            </nav>
+        </div>
+
+        <div class="tracking-workspace-panel is-active" id="tracking-lots-panel" role="tabpanel" aria-labelledby="tracking-lots-tab" data-tracking-panel="lots">
+            <header class="tracking-workspace-heading">
+                <div>
+                    <p class="tracking-section-kicker">Detalle operativo</p>
+                    <h2>Progreso de las listas de producción</h2>
+                    <span>Consulta el avance consolidado de cada lote registrado.</span>
+                </div>
+                <span class="tracking-heading-counter" id="tracking-lot-note">{{ tracking.lot_count }} registrado{{ '' if tracking.lot_count == 1 else 's' }}</span>
+            </header>
+            <div class="tracking-lot-list" id="tracking-lot-list">
+                {% for lot in tracking.lots %}
+                <article class="tracking-lot">
+                    <div class="tracking-lot-icon material-symbols-rounded" aria-hidden="true">deployed_code</div>
+                    <div class="tracking-lot-content">
+                        <div class="tracking-lot-top">
+                            <div class="tracking-lot-name">
+                                <div>
+                                    <h3>{{ lot.name }}</h3>
+                                    <p>{{ lot.component_count }} elemento{{ '' if lot.component_count == 1 else 's' }} · {{ lot.unit_count }} unidad{{ '' if lot.unit_count == 1 else 'es' }}</p>
+                                </div>
+                            </div>
+                            <strong>{{ '%.1f'|format(lot.progress) }}%</strong>
+                        </div>
+                        <div class="tracking-progress tracking-progress-large" role="progressbar" aria-label="Avance de {{ lot.name }}" aria-valuenow="{{ lot.progress }}" aria-valuemin="0" aria-valuemax="100">
+                            <span style="width: {{ lot.progress }}%"></span>
+                        </div>
+                        <p class="tracking-lot-foot">{{ lot.completed_count }} de {{ lot.component_count }} elemento{{ '' if lot.component_count == 1 else 's' }} completado{{ '' if lot.component_count == 1 else 's' }}</p>
+                    </div>
+                </article>
+                {% else %}
+                <div class="tracking-empty">
+                    <span class="material-symbols-rounded" aria-hidden="true">inventory_2</span>
+                    <strong>Aún no hay lotes registrados</strong>
+                    <p>El avance aparecerá cuando Producción cargue la información de esta OT.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="tracking-workspace-panel" id="tracking-personnel-panel" role="tabpanel" aria-labelledby="tracking-personnel-tab" data-tracking-panel="personnel" hidden>
+            <header class="tracking-workspace-heading tracking-personnel-toolbar">
+                <div>
+                    <p class="tracking-section-kicker">Equipo de fabricación</p>
+                    <h2>Personal registrado</h2>
+                    <span id="tracking-personnel-note">{{ tracking.personnel|length }} persona{{ '' if tracking.personnel|length == 1 else 's' }}</span>
+                </div>
+                <label class="tracking-search" for="tracking-person-search">
+                    <span class="material-symbols-rounded" aria-hidden="true">search</span>
+                    <input id="tracking-person-search" type="search" placeholder="Buscar persona, proceso o elemento" autocomplete="off">
+                </label>
+            </header>
+            <div class="tracking-person-grid" id="tracking-person-list">
+                {% for person in tracking.personnel %}
+                <article class="tracking-person" data-person-search="{{ (person.name ~ ' ' ~ (person.processes or ''))|lower }}">
+                    <div class="tracking-person-main">
+                        <span class="tracking-avatar">{{ person.initials }}</span>
+                        <div class="tracking-person-body">
+                            <strong class="tracking-person-name">{{ person.name }}</strong>
+                            <p>{{ person.processes or 'Asignación general' }}</p>
+                            <span>{{ person.component_count }} elemento{{ '' if person.component_count == 1 else 's' }} · {{ person.lot_count }} lote{{ '' if person.lot_count == 1 else 's' }}</span>
+                        </div>
+                    </div>
+                    <button type="button" class="tracking-person-action" data-person-index="{{ loop.index0 }}" aria-label="Ver detalle de {{ person.name }}">
+                        <span>Detalle</span>
+                        <span class="material-symbols-rounded" aria-hidden="true">chevron_right</span>
+                    </button>
+                </article>
+                {% else %}
+                <div class="tracking-empty tracking-empty-personnel">
+                    <span class="material-symbols-rounded" aria-hidden="true">engineering</span>
+                    <strong>Sin personal asignado</strong>
+                    <p>Producción todavía no registró operarios en los elementos.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="tracking-workspace-panel" id="tracking-photos-panel" role="tabpanel" aria-labelledby="tracking-photos-tab" data-tracking-panel="photos" hidden>
+            <header class="tracking-workspace-heading tracking-photos-heading">
+                <div>
+                    <p class="tracking-section-kicker">Evidencia seleccionada</p>
+                    <h2>Fotografías del avance</h2>
+                    <span>Evidencias publicadas para esta OT.</span>
+                </div>
+                {% if current_user.rol == 'admin' %}
+                <button type="button" class="tracking-manage-photos" data-open-photo-manager>
+                    <span class="material-symbols-rounded" aria-hidden="true">add_photo_alternate</span>
+                    <span>Seleccionar fotografías</span>
+                </button>
+                {% endif %}
+            </header>
+            <div class="tracking-photo-gallery" id="tracking-photo-gallery">
+                {% for photo in tracking.photos %}
+                <figure class="tracking-photo">
+                    <button type="button" data-photo-preview data-photo-url="{{ photo.image_url }}" data-photo-name="{{ photo.name }}" aria-label="Ampliar {{ photo.name }}">
+                        <img src="{{ photo.image_url }}" alt="{{ photo.name }}" loading="lazy">
+                        <span class="tracking-photo-zoom material-symbols-rounded" aria-hidden="true">zoom_in</span>
+                    </button>
+                    <figcaption>{{ photo.name }}</figcaption>
+                </figure>
+                {% else %}
+                <div class="tracking-empty tracking-photo-empty">
+                    <span class="material-symbols-rounded" aria-hidden="true">photo_library</span>
+                    <strong>Aún no hay fotografías publicadas</strong>
+                    <p>{% if current_user.rol == 'admin' %}Selecciona evidencias de Drive para mostrarlas en esta vista.{% else %}El administrador todavía no seleccionó fotografías para esta OT.{% endif %}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="tracking-workspace-panel tracking-documents-panel" id="tracking-plans-panel" role="tabpanel" aria-labelledby="tracking-plans-tab" data-tracking-panel="plans" hidden>
+            <header class="tracking-workspace-heading tracking-documents-heading">
+                <div>
+                    <p class="tracking-section-kicker">Documentación seleccionada</p>
+                    <h2>Planos de producción</h2>
+                    <span>Archivo aprobado para consulta.</span>
+                </div>
+                {% if current_user.rol == 'admin' %}
+                <button type="button" class="tracking-document-manage" data-open-document-manager="planos">
+                    Seleccionar plano
+                </button>
+                {% endif %}
+            </header>
+            <div class="tracking-document-list" id="tracking-plans-list" data-document-list="planos"></div>
+        </div>
+
+        <div class="tracking-workspace-panel tracking-documents-panel" id="tracking-documents-panel" role="tabpanel" aria-labelledby="tracking-documents-tab" data-tracking-panel="documents" hidden>
+            <header class="tracking-workspace-heading tracking-documents-heading">
+                <div>
+                    <p class="tracking-section-kicker">Documentación seleccionada</p>
+                    <h2>Otros documentos</h2>
+                    <span>Archivo aprobado para consulta.</span>
+                </div>
+                {% if current_user.rol == 'admin' %}
+                <button type="button" class="tracking-document-manage" data-open-document-manager="otros">
+                    Seleccionar documento
+                </button>
+                {% endif %}
+            </header>
+            <div class="tracking-document-list" id="tracking-documents-list" data-document-list="otros"></div>
+        </div>
+    </section>
+
+    <div class="tracking-activity-backdrop" id="tracking-activity-backdrop" hidden>
+        <aside class="tracking-activity-drawer" id="tracking-activity-drawer" role="dialog" aria-modal="true" aria-labelledby="tracking-activity-title" tabindex="-1">
+            <header class="tracking-drawer-header">
+                <div class="tracking-drawer-title">
+                    <span class="tracking-drawer-icon material-symbols-rounded" aria-hidden="true">forum</span>
+                    <div>
+                        <p class="tracking-section-kicker">Actividad de la orden</p>
+                        <h2 id="tracking-activity-title">Mensajes y actividad</h2>
+                        <span>OT {{ ot.ot }}</span>
+                    </div>
+                </div>
+                <button type="button" class="tracking-icon-button" data-close-activity aria-label="Cerrar actividad">
+                    <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                </button>
+            </header>
+
+            <div class="tracking-activity-tabs" role="tablist" aria-label="Actividad de la OT">
+                <button type="button" class="tracking-activity-tab is-active" id="tracking-messages-tab" role="tab" aria-selected="true" aria-controls="tracking-messages-pane" data-activity-tab="messages">
+                    <span class="material-symbols-rounded" aria-hidden="true">forum</span>
+                    <span>Mensajes</span>
+                    <b id="tracking-message-count">{{ tracking.manual_messages|length }}</b>
+                </button>
+                <button type="button" class="tracking-activity-tab" id="tracking-history-tab" role="tab" aria-selected="false" aria-controls="tracking-history-pane" data-activity-tab="history">
+                    <span class="material-symbols-rounded" aria-hidden="true">manage_history</span>
+                    <span>Historial</span>
+                    <b id="tracking-audit-count">{{ tracking.audit_events|length }}</b>
+                </button>
+            </div>
+
+            <div class="tracking-drawer-body">
+                <section class="tracking-activity-pane" id="tracking-messages-pane" role="tabpanel" aria-labelledby="tracking-messages-tab">
+                    <div class="tracking-readonly-note">
+                        <span class="material-symbols-rounded" aria-hidden="true">visibility</span>
+                        <span>Vista de solo lectura</span>
+                    </div>
+                    <div class="tracking-activity-list" id="tracking-message-list">
+                        {% for message in tracking.manual_messages %}
+                        <article class="tracking-activity-entry tracking-message-entry">
+                            <span class="tracking-activity-avatar">{{ (message.usuario_nombre or 'Usuario')[:2]|upper }}</span>
+                            <div class="tracking-activity-copy">
+                                <div class="tracking-activity-meta"><strong>{{ message.usuario_nombre or 'Usuario' }}</strong><time>{{ message.fecha }}</time></div>
+                                <p>{{ message.mensaje }}</p>
+                            </div>
+                        </article>
+                        {% else %}
+                        <div class="tracking-empty tracking-empty-activity"><span class="material-symbols-rounded" aria-hidden="true">forum</span><strong>No hay mensajes en esta OT</strong><p>Los mensajes registrados desde Producción aparecerán aquí.</p></div>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <section class="tracking-activity-pane" id="tracking-history-pane" role="tabpanel" aria-labelledby="tracking-history-tab" hidden>
+                    <div class="tracking-activity-list tracking-audit-list" id="tracking-audit-list">
+                        {% for event in tracking.audit_events %}
+                        <article class="tracking-activity-entry tracking-audit-entry">
+                            <span class="tracking-activity-marker material-symbols-rounded" aria-hidden="true">history</span>
+                            <div class="tracking-activity-copy">
+                                <div class="tracking-activity-meta"><strong>{{ event.usuario_nombre or 'Sistema' }}</strong><time>{{ event.fecha }}</time></div>
+                                <p>{{ event.mensaje }}</p>
+                            </div>
+                        </article>
+                        {% else %}
+                        <div class="tracking-empty tracking-empty-activity"><span class="material-symbols-rounded" aria-hidden="true">manage_history</span><strong>Aún no hay cambios registrados</strong><p>Los avances y asignaciones de Producción se mostrarán aquí.</p></div>
+                        {% endfor %}
+                    </div>
+                </section>
+            </div>
+
+        </aside>
+    </div>
+
+    <div class="tracking-person-detail-backdrop" id="tracking-person-detail-backdrop" hidden>
+        <section class="tracking-person-detail-dialog" id="tracking-person-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="tracking-person-detail-name" tabindex="-1">
+            <header class="tracking-person-detail-header">
+                <div class="tracking-person-detail-heading">
+                    <span class="tracking-avatar tracking-person-detail-avatar" id="tracking-person-detail-avatar">OP</span>
+                    <div>
+                        <p class="tracking-section-kicker">Participación en la OT</p>
+                        <h2 id="tracking-person-detail-name">Personal</h2>
+                        <span id="tracking-person-detail-processes">Asignación general</span>
+                    </div>
+                </div>
+                <button type="button" class="tracking-icon-button" data-close-person-detail aria-label="Cerrar detalle del personal">
+                    <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                </button>
+            </header>
+
+            <div class="tracking-person-detail-overview">
+                <div class="tracking-person-detail-copy">
+                    <strong>Resumen de asignación</strong>
+                    <span>Elementos y procesos vinculados a este operario.</span>
+                </div>
+                <div class="tracking-person-detail-summary">
+                    <span><b id="tracking-person-detail-element-count">0</b><small>Elementos</small></span>
+                    <span><b id="tracking-person-detail-lot-count">0</b><small>Lotes</small></span>
+                </div>
+            </div>
+
+            <div class="tracking-person-detail-body">
+                <div class="tracking-person-detail-body-heading">
+                    <div>
+                        <span>Asignaciones</span>
+                        <strong>Elementos vinculados</strong>
+                    </div>
+                    <small id="tracking-person-detail-list-count">0 elementos</small>
+                </div>
+                <div class="tracking-person-detail-list" id="tracking-person-detail-list"></div>
+            </div>
+
+            <footer class="tracking-person-detail-footer">
+                <button type="button" data-close-person-detail>Cerrar</button>
+            </footer>
+        </section>
+    </div>
+
+    {% if current_user.rol == 'admin' %}
+    <div class="tracking-photo-manager-backdrop" id="tracking-photo-manager-backdrop" hidden>
+        <section class="tracking-photo-manager" id="tracking-photo-manager" role="dialog" aria-modal="true" aria-labelledby="tracking-photo-manager-title" tabindex="-1">
+            <header class="tracking-photo-manager-header">
+                <div>
+                    <p class="tracking-section-kicker">Evidencia visible</p>
+                    <h2 id="tracking-photo-manager-title">Seleccionar fotografías</h2>
+                    <span>Elige hasta {{ max_tracking_photos }} imágenes de Drive para mostrarlas en Seguimiento.</span>
+                </div>
+                <button type="button" class="tracking-icon-button" data-close-photo-manager aria-label="Cerrar selección de fotografías">
+                    <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                </button>
+            </header>
+            <div class="tracking-photo-manager-body">
+                <div class="tracking-photo-manager-state" id="tracking-photo-manager-state">Consultando fotografías de la OT…</div>
+                <div class="tracking-photo-candidates" id="tracking-photo-candidates"></div>
+            </div>
+            <footer class="tracking-photo-manager-footer">
+                <span><b id="tracking-selected-photo-count">0</b> de {{ max_tracking_photos }} seleccionadas</span>
+                <div>
+                    <button type="button" class="tracking-button tracking-button-secondary" data-close-photo-manager>Cancelar</button>
+                    <button type="button" class="tracking-button tracking-button-primary" id="tracking-save-photos">Guardar selección</button>
+                </div>
+            </footer>
+        </section>
+    </div>
+    {% endif %}
+
+    {% if current_user.rol == 'admin' %}
+    <div class="tracking-document-manager-backdrop" id="tracking-document-manager-backdrop" hidden>
+        <section class="tracking-document-manager" id="tracking-document-manager" role="dialog" aria-modal="true" aria-labelledby="tracking-document-manager-title" tabindex="-1">
+            <header class="tracking-document-manager-header">
+                <div>
+                    <p class="tracking-section-kicker">Archivo visible en seguimiento</p>
+                    <h2 id="tracking-document-manager-title">Seleccionar archivo</h2>
+                </div>
+                <button type="button" class="tracking-document-close" data-close-document-manager aria-label="Cerrar selección">×</button>
+            </header>
+            <div class="tracking-document-manager-toolbar">
+                <label class="tracking-document-search" for="tracking-document-search">
+                    <input id="tracking-document-search" type="search" placeholder="Buscar archivo" autocomplete="off">
+                </label>
+                <span id="tracking-document-result-count">0 de 0</span>
+            </div>
+            <div class="tracking-document-table-head" aria-hidden="true">
+                <span>Archivo</span>
+                <span>Ubicación</span>
+                <span>Tamaño</span>
+                <span></span>
+            </div>
+            <div class="tracking-document-manager-body">
+                <div class="tracking-document-manager-state" id="tracking-document-manager-state">Consultando Google Drive…</div>
+                <div class="tracking-document-candidates" id="tracking-document-candidates"></div>
+            </div>
+            <footer class="tracking-document-manager-footer">
+                <div class="tracking-document-footer-selection">
+                    <button type="button" class="tracking-document-button tracking-document-button-danger" id="tracking-remove-document">Quitar archivo publicado</button>
+                    <span id="tracking-document-selection-note">Selecciona un archivo de la lista</span>
+                </div>
+                <div class="tracking-document-footer-actions">
+                    <button type="button" class="tracking-document-button" data-close-document-manager>Cancelar</button>
+                    <button type="button" class="tracking-document-button tracking-document-button-primary" id="tracking-save-document">Publicar archivo</button>
+                </div>
+            </footer>
+        </section>
+    </div>
+    {% endif %}
+
+    <div class="tracking-document-viewer-backdrop" id="tracking-document-viewer-backdrop" hidden>
+        <section class="tracking-document-viewer" role="dialog" aria-modal="true" aria-labelledby="tracking-document-viewer-title" tabindex="-1">
+            <header class="tracking-document-viewer-header">
+                <div>
+                    <p class="tracking-section-kicker">Vista previa</p>
+                    <h2 id="tracking-document-viewer-title">Documento</h2>
+                </div>
+                <div class="tracking-document-viewer-actions">
+                    <a id="tracking-document-download" class="tracking-document-button" href="#">Descargar</a>
+                    <button type="button" class="tracking-document-close" data-close-document-viewer aria-label="Cerrar documento">×</button>
+                </div>
+            </header>
+            <div class="tracking-document-viewer-body">
+                <iframe id="tracking-document-frame" title="Vista previa del documento"></iframe>
+            </div>
+        </section>
+    </div>
+
+    <div class="tracking-photo-preview-backdrop" id="tracking-photo-preview-backdrop" hidden>
+        <section class="tracking-photo-preview" role="dialog" aria-modal="true" aria-labelledby="tracking-photo-preview-name" tabindex="-1">
+            <header>
+                <div>
+                    <p class="tracking-section-kicker">Vista previa</p>
+                    <strong id="tracking-photo-preview-name">Fotografía</strong>
+                </div>
+                <button type="button" class="tracking-icon-button" data-close-photo-preview aria-label="Cerrar fotografía"><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
+            </header>
+            <div class="tracking-photo-preview-stage">
+                <img id="tracking-photo-preview-image" alt="">
+            </div>
+        </section>
+    </div>
+</div>
+
+<script>
+    window.TrackingConfig = {
+        refreshUrl: {{ url_for('gestion_ot_bp.seguimiento_data', id=ot.item)|tojson }},
+        refreshIntervalMs: 15000,
+    photoCandidatesUrl: {{ url_for('reporte_bp.api_obtener_fotos_drive', ot_id=ot.item)|tojson }},
+    savePhotosUrl: {{ url_for('gestion_ot_bp.guardar_fotos_seguimiento', id=ot.item)|tojson }},
+    canManagePhotos: {% if current_user.rol == 'admin' %}true{% else %}false{% endif %},
+    maxTrackingPhotos: {{ max_tracking_photos }},
+    documentsListUrl: {{ url_for('documentos_seguimiento_bp.listar_documentos', ot_id=ot.item)|tojson }},
+    documentCandidatesUrlTemplate: {{ url_for('documentos_seguimiento_bp.listar_candidatos', ot_id=ot.item, category='__CATEGORY__')|tojson }},
+    saveDocumentUrlTemplate: {{ url_for('documentos_seguimiento_bp.guardar_documento', ot_id=ot.item, category='__CATEGORY__')|tojson }},
+    canManageDocuments: {% if current_user.rol == 'admin' %}true{% else %}false{% endif %},
+    csrfToken: {{ csrf_token()|tojson }},
+    initialData: {{ tracking|tojson }}
+    };
+</script>
+<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=6.5.0"></script>
+<script src="{{ url_for('static', filename='js/seguimiento_documentos.js') }}?v=1.2.0"></script>
+{% endblock %}

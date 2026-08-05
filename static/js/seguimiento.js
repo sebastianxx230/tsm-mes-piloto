@@ -1,0 +1,1094 @@
+(() => {
+    'use strict';
+
+    const config = window.TrackingConfig || {};
+    const refreshIntervalMs = Math.max(Number(config.refreshIntervalMs || 15000), 10000);
+    const initialData = config.initialData && typeof config.initialData === 'object'
+        ? config.initialData
+        : {};
+
+    const signatures = {
+        lots: null,
+        personnel: null,
+        photos: null,
+        manualMessages: null,
+        auditEvents: null,
+    };
+
+    let refreshInProgress = false;
+    let lastFocusedElement = null;
+    let currentPersonnel = Array.isArray(initialData.personnel) ? initialData.personnel : [];
+    let currentPhotos = Array.isArray(initialData.photos) ? initialData.photos : [];
+    let availableTrackingPhotos = [];
+    let selectedTrackingPhotoIds = new Set();
+    let openPersonIndex = null;
+
+    function element(tagName, className = '', text) {
+        const node = document.createElement(tagName);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    function toArray(value) {
+        return Array.isArray(value) ? value : [];
+    }
+
+    function toNumber(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : 0;
+    }
+
+    function clampProgress(value) {
+        return Math.min(100, Math.max(0, toNumber(value)));
+    }
+
+    function formatProgress(value) {
+        return `${clampProgress(value).toFixed(1)}%`;
+    }
+
+    function plural(count, singular, pluralForm) {
+        return count === 1 ? singular : pluralForm;
+    }
+
+    function getInitials(name, fallback = 'US') {
+        const initials = String(name || '')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part.charAt(0).toUpperCase())
+            .join('');
+
+        return initials || fallback;
+    }
+
+
+    function dateGroup(value) {
+        const text = String(value || '').trim();
+        if (!text) return 'Sin fecha';
+        return text.split(/\s+/)[0] || 'Sin fecha';
+    }
+
+    function appendDateSeparator(fragment, value, previousValue) {
+        const group = dateGroup(value);
+        if (group === previousValue) return group;
+        const separator = element('div', 'tracking-activity-date');
+        separator.append(
+            element('span', '', group),
+            element('i'),
+        );
+        fragment.append(separator);
+        return group;
+    }
+
+    function classifyAuditEvent(message) {
+        const text = String(message || '').toLocaleLowerCase('es');
+        if (text.includes('personal') || text.includes('operario') || text.includes('asignado')) {
+            return { className: 'is-personnel', icon: 'person_add', label: 'Personal' };
+        }
+        if (text.includes('avance') || text.includes('progreso')) {
+            return { className: 'is-progress', icon: 'trending_up', label: 'Avance' };
+        }
+        if (text.includes('estado')) {
+            return { className: 'is-status', icon: 'flag', label: 'Estado' };
+        }
+        if (text.includes('cantidad') || text.includes('unidad')) {
+            return { className: 'is-quantity', icon: 'numbers', label: 'Cantidad' };
+        }
+        if (text.includes('elimin')) {
+            return { className: 'is-delete', icon: 'delete', label: 'Eliminación' };
+        }
+        return { className: 'is-default', icon: 'history', label: 'Cambio' };
+    }
+
+    function firstDefined(source, keys, fallback = '') {
+        if (!source || typeof source !== 'object') return fallback;
+
+        for (const key of keys) {
+            const value = source[key];
+            if (value !== undefined && value !== null && String(value).trim() !== '') {
+                return value;
+            }
+        }
+
+        return fallback;
+    }
+
+    function setText(id, value) {
+        const node = document.getElementById(id);
+        if (node) node.textContent = String(value);
+    }
+
+    function setProgressWidth(id, value) {
+        const node = document.getElementById(id);
+        if (node) node.style.width = `${clampProgress(value)}%`;
+    }
+
+    function createEmptyState(iconName, title, description, extraClass = '') {
+        const empty = element('div', `tracking-empty ${extraClass}`.trim());
+        const icon = element('span', 'material-symbols-rounded', iconName);
+        icon.setAttribute('aria-hidden', 'true');
+        empty.append(
+            icon,
+            element('strong', '', title),
+            element('p', '', description),
+        );
+        return empty;
+    }
+
+    function updateSummary(data) {
+        const overallProgress = clampProgress(data.overall_progress);
+        const completedCount = toNumber(data.completed_count);
+        const elementCount = toNumber(data.component_count);
+        const lotCount = toNumber(data.lot_count);
+        const personnelCount = toArray(data.personnel).length;
+        const elementProgress = elementCount > 0
+            ? (completedCount / elementCount) * 100
+            : 0;
+
+        setText('tracking-overall-progress', formatProgress(overallProgress));
+        const statusNode = document.getElementById('tracking-overall-status');
+        const statusText = overallProgress >= 100 ? 'Completado' : overallProgress > 0 ? 'En proceso' : 'Pendiente';
+        setText('tracking-overall-status', statusText);
+        if (statusNode) {
+            statusNode.classList.toggle('is-complete', overallProgress >= 100);
+            statusNode.classList.toggle('is-pending', overallProgress <= 0);
+        }
+        setText('tracking-completed-summary', completedCount);
+        setText('tracking-component-count', elementCount);
+        setText('tracking-lot-count', lotCount);
+        setText('tracking-personnel-count', personnelCount);
+        setText('tracking-photo-count', toArray(data.photos).length);
+        setText('tracking-lot-tab-count', lotCount);
+        setText('tracking-personnel-tab-count', personnelCount);
+        setText('tracking-photo-tab-count', toArray(data.photos).length);
+        setText('tracking-completed-count', completedCount);
+        setText('tracking-progress-count', toNumber(data.in_progress_count));
+        setText('tracking-pending-count', toNumber(data.pending_count));
+        setText('tracking-lot-note', `${lotCount} registrado${lotCount === 1 ? '' : 's'}`);
+        setText('tracking-personnel-note', `${personnelCount} persona${personnelCount === 1 ? '' : 's'}`);
+        setText('tracking-lot-summary-label', `${plural(lotCount, 'Lista', 'Listas')} de producción`);
+
+        setProgressWidth('tracking-overall-bar', overallProgress);
+        setProgressWidth('tracking-component-bar', elementProgress);
+
+        const ring = document.getElementById('tracking-overall-ring');
+        if (ring) ring.style.setProperty('--progress', String(overallProgress));
+    }
+
+    function findProcessCard(key) {
+        return Array.from(document.querySelectorAll('[data-process-key]'))
+            .find((card) => card.dataset.processKey === String(key || ''));
+    }
+
+    function updateProcesses(processes) {
+        toArray(processes).forEach((process) => {
+            const card = findProcessCard(process.key);
+            if (!card) return;
+
+            const progress = clampProgress(process.progress);
+            const progressValue = card.querySelector('[data-process-progress]');
+            const status = card.querySelector('[data-process-status]');
+            const bar = card.querySelector('[data-process-bar]');
+            const statusText = String(process.status || 'Sin datos');
+            const normalizedStatus = statusText.toLocaleLowerCase('es');
+            const isComplete = progress >= 99.95 || normalizedStatus.includes('complet');
+            const isPending = progress <= 0 || normalizedStatus.includes('pendiente') || normalizedStatus.includes('sin datos');
+
+            card.classList.toggle('is-complete', isComplete);
+            card.classList.toggle('is-pending', !isComplete && isPending);
+            card.classList.toggle('is-progress', !isComplete && !isPending);
+
+            if (progressValue) progressValue.textContent = formatProgress(progress);
+            if (status) status.textContent = statusText;
+
+            if (bar) {
+                bar.setAttribute('aria-valuenow', String(progress));
+                const fill = bar.querySelector('span');
+                if (fill) fill.style.width = `${progress}%`;
+            }
+        });
+    }
+
+    function renderLots(lots) {
+        const container = document.getElementById('tracking-lot-list');
+        if (!container) return;
+
+        const safeLots = toArray(lots);
+        const fragment = document.createDocumentFragment();
+
+        if (!safeLots.length) {
+            fragment.append(createEmptyState(
+                'inventory_2',
+                'Aún no hay lotes registrados',
+                'El avance aparecerá cuando Producción cargue la información de esta OT.',
+            ));
+        }
+
+        safeLots.forEach((lot) => {
+            const lotName = lot.name || 'Lista sin nombre';
+            const elementCount = toNumber(lot.component_count);
+            const unitCount = toNumber(lot.unit_count);
+            const completedCount = toNumber(lot.completed_count);
+            const progress = clampProgress(lot.progress);
+
+            const article = element('article', 'tracking-lot');
+            const lotIcon = element('div', 'tracking-lot-icon material-symbols-rounded', 'deployed_code');
+            lotIcon.setAttribute('aria-hidden', 'true');
+            const content = element('div', 'tracking-lot-content');
+            const top = element('div', 'tracking-lot-top');
+            const name = element('div', 'tracking-lot-name');
+            const copy = element('div');
+
+            copy.append(
+                element('h3', '', lotName),
+                element(
+                    'p',
+                    '',
+                    `${elementCount} ${plural(elementCount, 'elemento', 'elementos')} · ${unitCount} ${plural(unitCount, 'unidad', 'unidades')}`,
+                ),
+            );
+
+            name.append(copy);
+            top.append(name, element('strong', '', formatProgress(progress)));
+
+            const progressBar = element('div', 'tracking-progress tracking-progress-large');
+            progressBar.setAttribute('role', 'progressbar');
+            progressBar.setAttribute('aria-label', `Avance de ${lotName}`);
+            progressBar.setAttribute('aria-valuenow', String(progress));
+            progressBar.setAttribute('aria-valuemin', '0');
+            progressBar.setAttribute('aria-valuemax', '100');
+
+            const fill = element('span');
+            fill.style.width = `${progress}%`;
+            progressBar.append(fill);
+
+            const completedLabel = `${completedCount} de ${elementCount} ${plural(elementCount, 'elemento completado', 'elementos completados')}`;
+            content.append(top, progressBar, element('p', 'tracking-lot-foot', completedLabel));
+            article.append(lotIcon, content);
+            fragment.append(article);
+        });
+
+        container.replaceChildren(fragment);
+    }
+
+    function personElementSource(person) {
+        const candidates = [
+            person?.elements,
+            person?.elementos,
+            person?.assigned_elements,
+            person?.assignedElements,
+            person?.element_details,
+            person?.elementDetails,
+            person?.components,
+            person?.componentes,
+        ];
+
+        return candidates.find(Array.isArray) || [];
+    }
+
+    function normalizePersonElement(item) {
+        const safeItem = item && typeof item === 'object' ? item : {};
+        const code = firstDefined(safeItem, [
+            'code', 'codigo', 'código', 'item_code', 'itemCode', 'element_code', 'elementCode', 'codigo_elemento',
+        ], 'Sin código');
+        const brand = firstDefined(safeItem, [
+            'brand', 'marca', 'mark', 'element_brand', 'elementBrand', 'marca_elemento',
+        ], '');
+        const description = firstDefined(safeItem, [
+            'description', 'descripcion', 'descripción', 'name', 'nombre', 'element_name', 'elementName',
+        ], 'Sin descripción registrada');
+        const lot = firstDefined(safeItem, [
+            'lot', 'lote', 'list', 'lista', 'lot_name', 'lotName', 'lista_nombre',
+        ], '');
+        const processesValue = firstDefined(safeItem, [
+            'processes', 'procesos', 'process', 'proceso', 'stages', 'etapas',
+        ], '');
+        const processes = Array.isArray(processesValue)
+            ? processesValue.join(', ')
+            : String(processesValue || '');
+
+        return {
+            code: String(code),
+            brand: String(brand),
+            description: String(description),
+            lot: String(lot || ''),
+            processes,
+        };
+    }
+
+    function getPersonSearchText(person) {
+        const personName = person?.name || '';
+        const processes = person?.processes || '';
+        const elementText = personElementSource(person)
+            .map(normalizePersonElement)
+            .map((item) => `${item.code} ${item.brand} ${item.description} ${item.lot} ${item.processes}`)
+            .join(' ');
+
+        return `${personName} ${processes} ${elementText}`.toLocaleLowerCase('es');
+    }
+
+    function renderPersonnel(personnel) {
+        const container = document.getElementById('tracking-person-list');
+        if (!container) return;
+
+        const safePersonnel = toArray(personnel);
+        currentPersonnel = safePersonnel;
+        const fragment = document.createDocumentFragment();
+
+        if (!safePersonnel.length) {
+            fragment.append(createEmptyState(
+                'engineering',
+                'Sin personal asignado',
+                'Producción todavía no registró operarios en los elementos.',
+                'tracking-empty-personnel',
+            ));
+        }
+
+        safePersonnel.forEach((person, index) => {
+            const personName = person.name || 'Personal sin nombre';
+            const processes = person.processes || 'Asignación general';
+            const elementCount = toNumber(person.component_count);
+            const lotCount = toNumber(person.lot_count);
+
+            const article = element('article', 'tracking-person');
+            article.dataset.personSearch = getPersonSearchText(person);
+
+            const main = element('div', 'tracking-person-main');
+            const body = element('div', 'tracking-person-body');
+            body.append(
+                element('strong', 'tracking-person-name', personName),
+                element('p', '', processes),
+                element(
+                    'span',
+                    '',
+                    `${elementCount} ${plural(elementCount, 'elemento', 'elementos')} · ${lotCount} ${plural(lotCount, 'lote', 'lotes')}`,
+                ),
+            );
+
+            main.append(
+                element('span', 'tracking-avatar', person.initials || getInitials(personName, 'OP')),
+                body,
+            );
+
+            const detailButton = element('button', 'tracking-person-action');
+            detailButton.type = 'button';
+            detailButton.dataset.personIndex = String(index);
+            detailButton.setAttribute('aria-label', `Ver detalle de participación de ${personName}`);
+            detailButton.append(
+                element('span', '', 'Detalle'),
+                element('span', 'material-symbols-rounded', 'chevron_right'),
+            );
+
+            article.append(main, detailButton);
+            fragment.append(article);
+        });
+
+        container.replaceChildren(fragment);
+        applyPersonnelFilter();
+
+        if (openPersonIndex !== null && safePersonnel[openPersonIndex]) {
+            renderPersonDetail(safePersonnel[openPersonIndex]);
+        }
+    }
+
+    function renderPhotos(photos) {
+        const container = document.getElementById('tracking-photo-gallery');
+        if (!container) return;
+
+        const safePhotos = toArray(photos);
+        currentPhotos = safePhotos;
+        const fragment = document.createDocumentFragment();
+
+        if (!safePhotos.length) {
+            const description = config.canManagePhotos
+                ? 'Selecciona evidencias de Drive para mostrarlas en esta vista.'
+                : 'El administrador todavía no seleccionó fotografías para esta OT.';
+            fragment.append(createEmptyState(
+                'photo_library',
+                'Aún no hay fotografías publicadas',
+                description,
+                'tracking-photo-empty',
+            ));
+        }
+
+        safePhotos.forEach((photo, index) => {
+            const photoName = String(photo.name || `Fotografía ${index + 1}`);
+            const imageUrl = String(photo.image_url || '');
+            if (!imageUrl) return;
+
+            const figure = element('figure', 'tracking-photo');
+            const button = element('button');
+            button.type = 'button';
+            button.dataset.photoPreview = '';
+            button.dataset.photoUrl = imageUrl;
+            button.dataset.photoName = photoName;
+            button.setAttribute('aria-label', `Ampliar ${photoName}`);
+
+            const image = element('img');
+            image.src = imageUrl;
+            image.alt = photoName;
+            image.loading = 'lazy';
+
+            const zoom = element('span', 'tracking-photo-zoom material-symbols-rounded', 'zoom_in');
+            zoom.setAttribute('aria-hidden', 'true');
+            button.append(image, zoom);
+            figure.append(button, element('figcaption', '', photoName));
+            fragment.append(figure);
+        });
+
+        container.replaceChildren(fragment);
+    }
+
+    function renderMessages(messages) {
+        const container = document.getElementById('tracking-message-list');
+        if (!container) return;
+
+        const safeMessages = toArray(messages);
+        const fragment = document.createDocumentFragment();
+        let previousGroup = '';
+
+        if (!safeMessages.length) {
+            fragment.append(createEmptyState(
+                'forum',
+                'No hay mensajes en esta OT',
+                'Los mensajes registrados desde Producción aparecerán aquí.',
+                'tracking-empty-activity',
+            ));
+        }
+
+        safeMessages.forEach((message) => {
+            const author = message.usuario_nombre || 'Usuario';
+            previousGroup = appendDateSeparator(fragment, message.fecha, previousGroup);
+            const article = element('article', 'tracking-activity-entry tracking-message-entry');
+            const copy = element('div', 'tracking-activity-copy');
+            const meta = element('div', 'tracking-activity-meta');
+
+            meta.append(
+                element('strong', '', author),
+                element('time', '', message.fecha || '-'),
+            );
+            copy.append(meta, element('p', '', message.mensaje || ''));
+            article.append(element('span', 'tracking-activity-avatar', getInitials(author, 'US')), copy);
+            fragment.append(article);
+        });
+
+        container.replaceChildren(fragment);
+    }
+
+    function renderAudits(events) {
+        const container = document.getElementById('tracking-audit-list');
+        if (!container) return;
+
+        const safeEvents = toArray(events);
+        const fragment = document.createDocumentFragment();
+        let previousGroup = '';
+
+        if (!safeEvents.length) {
+            fragment.append(createEmptyState(
+                'manage_history',
+                'Aún no hay cambios registrados',
+                'Los avances y asignaciones de Producción se mostrarán aquí.',
+                'tracking-empty-activity',
+            ));
+        }
+
+        safeEvents.forEach((event) => {
+            const type = classifyAuditEvent(event.mensaje);
+            previousGroup = appendDateSeparator(fragment, event.fecha, previousGroup);
+            const article = element('article', `tracking-activity-entry tracking-audit-entry ${type.className}`);
+            const marker = element('span', 'tracking-activity-marker material-symbols-rounded', type.icon);
+            marker.setAttribute('aria-hidden', 'true');
+
+            const copy = element('div', 'tracking-activity-copy');
+            const meta = element('div', 'tracking-activity-meta');
+            const identity = element('div', 'tracking-activity-identity');
+            identity.append(
+                element('strong', '', event.usuario_nombre || 'Sistema'),
+                element('span', 'tracking-event-kind', type.label),
+            );
+            meta.append(identity, element('time', '', event.fecha || '-'));
+            copy.append(meta, element('p', '', event.mensaje || ''));
+            article.append(marker, copy);
+            fragment.append(article);
+        });
+
+        container.replaceChildren(fragment);
+    }
+
+    function updateCollection(signatureKey, items, renderFunction) {
+        const safeItems = toArray(items);
+        const nextSignature = JSON.stringify(safeItems);
+        if (signatures[signatureKey] === nextSignature) return;
+
+        signatures[signatureKey] = nextSignature;
+        renderFunction(safeItems);
+    }
+
+    function updateActivityCounts(messages, audits) {
+        const messageCount = toArray(messages).length;
+        const auditCount = toArray(audits).length;
+        setText('tracking-message-count', messageCount);
+        setText('tracking-audit-count', auditCount);
+        setText('tracking-activity-total', messageCount + auditCount);
+    }
+
+    function applyTrackingData(data) {
+        const safeData = data && typeof data === 'object' ? data : {};
+        const lots = toArray(safeData.lots);
+        const personnel = toArray(safeData.personnel);
+        const photos = toArray(safeData.photos);
+        const messages = toArray(safeData.manual_messages);
+        const audits = toArray(safeData.audit_events);
+
+        currentPersonnel = personnel;
+        updateSummary(safeData);
+        updateProcesses(safeData.processes);
+        updateCollection('lots', lots, renderLots);
+        updateCollection('personnel', personnel, renderPersonnel);
+        updateCollection('photos', photos, renderPhotos);
+        updateCollection('manualMessages', messages, renderMessages);
+        updateCollection('auditEvents', audits, renderAudits);
+        updateActivityCounts(messages, audits);
+
+        if (openPersonIndex !== null && personnel[openPersonIndex]) {
+            renderPersonDetail(personnel[openPersonIndex]);
+        }
+    }
+
+    function applyPersonnelFilter() {
+        const input = document.getElementById('tracking-person-search');
+        const query = String(input?.value || '').trim().toLocaleLowerCase('es');
+        const cards = document.querySelectorAll('#tracking-person-list .tracking-person');
+
+        cards.forEach((card) => {
+            const searchText = String(card.dataset.personSearch || '');
+            card.hidden = Boolean(query) && !searchText.includes(query);
+        });
+    }
+
+    function setupPersonnelSearch() {
+        const input = document.getElementById('tracking-person-search');
+        if (input) input.addEventListener('input', applyPersonnelFilter);
+    }
+
+    function selectTrackingView(target, updateHash = true) {
+        const validTarget = ['lots', 'personnel', 'photos'].includes(target)
+            ? target
+            : 'lots';
+
+        document.querySelectorAll('[data-tracking-view]').forEach((tab) => {
+            const active = tab.dataset.trackingView === validTarget;
+            tab.classList.toggle('is-active', active);
+            tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+
+        document.querySelectorAll('[data-tracking-panel]').forEach((panel) => {
+            const active = panel.dataset.trackingPanel === validTarget;
+            panel.classList.toggle('is-active', active);
+            panel.hidden = !active;
+        });
+
+        if (updateHash) {
+            const hash = validTarget === 'photos' ? '#fotos' : '';
+            window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
+        }
+    }
+
+    function setupTrackingWorkspace() {
+        document.querySelectorAll('[data-tracking-view]').forEach((tab) => {
+            tab.addEventListener('click', () => selectTrackingView(tab.dataset.trackingView));
+        });
+
+        selectTrackingView(window.location.hash === '#fotos' ? 'photos' : 'lots', false);
+    }
+
+    function selectActivityTab(target) {
+        document.querySelectorAll('[data-activity-tab]').forEach((tab) => {
+            const active = tab.dataset.activityTab === target;
+            tab.classList.toggle('is-active', active);
+            tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+
+        const messagesPane = document.getElementById('tracking-messages-pane');
+        const historyPane = document.getElementById('tracking-history-pane');
+        if (messagesPane) messagesPane.hidden = target !== 'messages';
+        if (historyPane) historyPane.hidden = target !== 'history';
+    }
+
+    function setupActivityTabs() {
+        document.querySelectorAll('[data-activity-tab]').forEach((tab) => {
+            tab.addEventListener('click', () => selectActivityTab(tab.dataset.activityTab));
+        });
+    }
+
+    function updatePhotoSelectionUI() {
+        const orderedIds = Array.from(selectedTrackingPhotoIds);
+        document.querySelectorAll('[data-tracking-photo-id]').forEach((card) => {
+            const position = orderedIds.indexOf(card.dataset.trackingPhotoId);
+            card.classList.toggle('is-selected', position >= 0);
+            card.setAttribute('aria-pressed', position >= 0 ? 'true' : 'false');
+            const badge = card.querySelector('b');
+            if (badge) badge.textContent = position >= 0 ? String(position + 1) : '';
+        });
+        setText('tracking-selected-photo-count', orderedIds.length);
+    }
+
+    function setPhotoManagerState(message, mode = 'loading') {
+        const state = document.getElementById('tracking-photo-manager-state');
+        if (!state) return;
+        state.textContent = message;
+        state.classList.toggle('is-inline', mode === 'inline');
+        state.hidden = !message;
+    }
+
+    function renderPhotoCandidates(photos) {
+        const container = document.getElementById('tracking-photo-candidates');
+        if (!container) return;
+
+        availableTrackingPhotos = toArray(photos).filter((photo) => (
+            photo
+            && typeof photo.id === 'string'
+            && /^[A-Za-z0-9_-]+$/.test(photo.id)
+            && typeof photo.thumbnail === 'string'
+            && (
+                photo.thumbnail.startsWith('https://')
+                || photo.thumbnail.startsWith(`${window.location.origin}/`)
+            )
+        ));
+        const fragment = document.createDocumentFragment();
+
+        availableTrackingPhotos.forEach((photo, index) => {
+            const photoName = String(photo.nombre || `Fotografía ${index + 1}`);
+            const card = element('button', 'tracking-photo-candidate');
+            card.type = 'button';
+            card.dataset.trackingPhotoId = photo.id;
+            card.setAttribute('aria-label', `Seleccionar ${photoName}`);
+            card.setAttribute('aria-pressed', 'false');
+
+            const image = element('img');
+            image.src = photo.thumbnail;
+            image.alt = photoName;
+            image.loading = 'lazy';
+
+            card.append(image, element('span', '', photoName), element('b'));
+            fragment.append(card);
+        });
+
+        container.replaceChildren(fragment);
+        if (!availableTrackingPhotos.length) {
+            setPhotoManagerState('No hay fotografías disponibles en la carpeta de Drive de esta OT.', 'empty');
+        } else {
+            setPhotoManagerState('');
+        }
+        updatePhotoSelectionUI();
+    }
+
+    async function openPhotoManager() {
+        if (!config.canManagePhotos) return;
+        const backdrop = document.getElementById('tracking-photo-manager-backdrop');
+        const dialog = document.getElementById('tracking-photo-manager');
+        const container = document.getElementById('tracking-photo-candidates');
+        if (!backdrop || !dialog || !container) return;
+
+        lastFocusedElement = document.activeElement;
+        selectedTrackingPhotoIds = new Set(
+            currentPhotos.map((photo) => String(photo.drive_file_id || '')).filter(Boolean),
+        );
+        container.replaceChildren();
+        setPhotoManagerState('Consultando fotografías de la OT…');
+        updatePhotoSelectionUI();
+        backdrop.hidden = false;
+        syncBodyScrollLock();
+        window.requestAnimationFrame(() => dialog.focus());
+
+        try {
+            const response = await fetch(config.photoCandidatesUrl, {
+                cache: 'no-store',
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success || !Array.isArray(payload.fotos)) {
+                throw new Error(payload.error || 'No fue posible consultar Google Drive.');
+            }
+            renderPhotoCandidates(payload.fotos);
+        } catch (error) {
+            availableTrackingPhotos = [];
+            setPhotoManagerState(error.message || 'No fue posible consultar Google Drive.', 'error');
+        }
+    }
+
+    function closePhotoManager() {
+        const backdrop = document.getElementById('tracking-photo-manager-backdrop');
+        if (!backdrop || backdrop.hidden) return;
+        backdrop.hidden = true;
+        syncBodyScrollLock();
+        if (lastFocusedElement instanceof HTMLElement) lastFocusedElement.focus();
+    }
+
+    async function saveTrackingPhotos() {
+        const saveButton = document.getElementById('tracking-save-photos');
+        if (!saveButton || !config.savePhotosUrl) return;
+
+        const photos = Array.from(selectedTrackingPhotoIds)
+            .map((imageId) => availableTrackingPhotos.find((photo) => photo.id === imageId))
+            .filter(Boolean)
+            .map((photo) => ({ id: photo.id, name: photo.nombre || '' }));
+
+        saveButton.disabled = true;
+        saveButton.textContent = 'Guardando…';
+        setPhotoManagerState('Guardando la selección…', 'inline');
+
+        try {
+            const response = await fetch(config.savePhotosUrl, {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': config.csrfToken || '',
+                },
+                body: JSON.stringify({ photos }),
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success || !Array.isArray(payload.photos)) {
+                throw new Error(payload.error || 'No fue posible guardar la selección.');
+            }
+
+            signatures.photos = JSON.stringify(payload.photos);
+            renderPhotos(payload.photos);
+            setText('tracking-photo-count', payload.photos.length);
+            setText('tracking-photo-tab-count', payload.photos.length);
+            closePhotoManager();
+            selectTrackingView('photos');
+        } catch (error) {
+            setPhotoManagerState(error.message || 'No fue posible guardar la selección.', 'inline');
+        } finally {
+            saveButton.disabled = false;
+            saveButton.textContent = 'Guardar selección';
+        }
+    }
+
+    function setupPhotoManager() {
+        document.querySelectorAll('[data-open-photo-manager]').forEach((button) => {
+            button.addEventListener('click', openPhotoManager);
+        });
+        document.querySelectorAll('[data-close-photo-manager]').forEach((button) => {
+            button.addEventListener('click', closePhotoManager);
+        });
+
+        const candidates = document.getElementById('tracking-photo-candidates');
+        if (candidates) {
+            candidates.addEventListener('click', (event) => {
+                const card = event.target.closest('[data-tracking-photo-id]');
+                if (!card || !candidates.contains(card)) return;
+                const imageId = card.dataset.trackingPhotoId;
+                if (selectedTrackingPhotoIds.has(imageId)) {
+                    selectedTrackingPhotoIds.delete(imageId);
+                } else {
+                    const limit = Math.max(1, toNumber(config.maxTrackingPhotos) || 12);
+                    if (selectedTrackingPhotoIds.size >= limit) {
+                        setPhotoManagerState(`Puedes seleccionar como máximo ${limit} fotografías.`, 'inline');
+                        return;
+                    }
+                    selectedTrackingPhotoIds.add(imageId);
+                }
+                setPhotoManagerState('');
+                updatePhotoSelectionUI();
+            });
+        }
+
+        const backdrop = document.getElementById('tracking-photo-manager-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', (event) => {
+                if (event.target === backdrop) closePhotoManager();
+            });
+        }
+
+        const saveButton = document.getElementById('tracking-save-photos');
+        if (saveButton) saveButton.addEventListener('click', saveTrackingPhotos);
+    }
+
+    function openPhotoPreview(url, name) {
+        const backdrop = document.getElementById('tracking-photo-preview-backdrop');
+        const image = document.getElementById('tracking-photo-preview-image');
+        const dialog = backdrop?.querySelector('.tracking-photo-preview');
+        if (!backdrop || !image || !dialog || !url) return;
+
+        lastFocusedElement = document.activeElement;
+        image.src = url;
+        image.alt = name || 'Fotografía de seguimiento';
+        setText('tracking-photo-preview-name', name || 'Fotografía');
+        backdrop.hidden = false;
+        syncBodyScrollLock();
+        window.requestAnimationFrame(() => dialog.focus());
+    }
+
+    function closePhotoPreview() {
+        const backdrop = document.getElementById('tracking-photo-preview-backdrop');
+        const image = document.getElementById('tracking-photo-preview-image');
+        if (!backdrop || backdrop.hidden) return;
+        backdrop.hidden = true;
+        if (image) image.removeAttribute('src');
+        syncBodyScrollLock();
+        if (lastFocusedElement instanceof HTMLElement) lastFocusedElement.focus();
+    }
+
+    function setupPhotoPreview() {
+        const gallery = document.getElementById('tracking-photo-gallery');
+        if (gallery) {
+            gallery.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-photo-preview]');
+                if (!trigger || !gallery.contains(trigger)) return;
+                openPhotoPreview(trigger.dataset.photoUrl, trigger.dataset.photoName);
+            });
+        }
+        document.querySelectorAll('[data-close-photo-preview]').forEach((button) => {
+            button.addEventListener('click', closePhotoPreview);
+        });
+        const backdrop = document.getElementById('tracking-photo-preview-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', (event) => {
+                if (event.target === backdrop) closePhotoPreview();
+            });
+        }
+    }
+
+    function syncBodyScrollLock() {
+        const activityBackdrop = document.getElementById('tracking-activity-backdrop');
+        const personBackdrop = document.getElementById('tracking-person-detail-backdrop');
+        const photoManagerBackdrop = document.getElementById('tracking-photo-manager-backdrop');
+        const photoPreviewBackdrop = document.getElementById('tracking-photo-preview-backdrop');
+        const hasOpenOverlay = Boolean(
+            (activityBackdrop && !activityBackdrop.hidden)
+            || (personBackdrop && !personBackdrop.hidden)
+            || (photoManagerBackdrop && !photoManagerBackdrop.hidden)
+            || (photoPreviewBackdrop && !photoPreviewBackdrop.hidden)
+        );
+
+        document.body.classList.toggle('tracking-overlay-open', hasOpenOverlay);
+    }
+
+    function openActivityDrawer(preferredTab = 'messages') {
+        const backdrop = document.getElementById('tracking-activity-backdrop');
+        const drawer = document.getElementById('tracking-activity-drawer');
+        if (!backdrop || !drawer) return;
+
+        lastFocusedElement = document.activeElement;
+        selectActivityTab(preferredTab);
+        backdrop.hidden = false;
+        syncBodyScrollLock();
+        window.requestAnimationFrame(() => drawer.focus());
+    }
+
+    function closeActivityDrawer() {
+        const backdrop = document.getElementById('tracking-activity-backdrop');
+        if (!backdrop || backdrop.hidden) return;
+
+        backdrop.hidden = true;
+        syncBodyScrollLock();
+        if (lastFocusedElement instanceof HTMLElement) lastFocusedElement.focus();
+    }
+
+    function setupActivityDrawer() {
+        document.querySelectorAll('[data-open-activity]').forEach((button) => {
+            button.addEventListener('click', () => openActivityDrawer('messages'));
+        });
+
+        document.querySelectorAll('[data-close-activity]').forEach((button) => {
+            button.addEventListener('click', closeActivityDrawer);
+        });
+
+        const backdrop = document.getElementById('tracking-activity-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', (event) => {
+                if (event.target === backdrop) closeActivityDrawer();
+            });
+        }
+    }
+
+    function renderPersonDetail(person) {
+        const personName = person?.name || 'Personal sin nombre';
+        const processes = person?.processes || 'Asignación general';
+        const elements = personElementSource(person).map(normalizePersonElement);
+        const declaredElementCount = toNumber(person?.component_count);
+        const lotCount = toNumber(person?.lot_count);
+        const list = document.getElementById('tracking-person-detail-list');
+
+        setText('tracking-person-detail-avatar', person?.initials || getInitials(personName, 'OP'));
+        setText('tracking-person-detail-name', personName);
+        setText('tracking-person-detail-processes', processes);
+        setText('tracking-person-detail-element-count', elements.length || declaredElementCount);
+        setText('tracking-person-detail-lot-count', lotCount);
+        setText(
+            'tracking-person-detail-list-count',
+            `${elements.length || declaredElementCount} ${plural(elements.length || declaredElementCount, 'elemento', 'elementos')}`,
+        );
+
+        if (!list) return;
+        const fragment = document.createDocumentFragment();
+
+        if (!elements.length) {
+            const empty = element('div', 'tracking-person-detail-empty');
+            const icon = element('span', 'material-symbols-rounded', 'assignment_late');
+            icon.setAttribute('aria-hidden', 'true');
+            empty.append(
+                icon,
+                element('strong', '', 'No se recibió el detalle de los elementos'),
+                element(
+                    'p',
+                    '',
+                    `El resumen registra ${declaredElementCount} ${plural(declaredElementCount, 'elemento', 'elementos')}, pero el endpoint de seguimiento todavía no envía el código y la marca por persona.`,
+                ),
+            );
+            fragment.append(empty);
+        }
+
+        elements.forEach((item, index) => {
+            const article = element('article', 'tracking-person-element');
+            const main = element('div', 'tracking-person-element-main');
+            const codeLine = element('div', 'tracking-person-element-code');
+            const headingParts = [item.code, item.brand]
+                .filter((value, position, values) => value && values.indexOf(value) === position);
+            codeLine.append(element('strong', '', headingParts.join(' · ') || 'Elemento sin marca'));
+
+            main.append(
+                codeLine,
+                element('p', 'tracking-person-element-description', item.description),
+            );
+
+            const metaParts = [];
+            if (item.lot) metaParts.push({ label: 'Lote', value: item.lot });
+            if (item.processes) metaParts.push({ label: 'Proceso', value: item.processes });
+
+            if (metaParts.length) {
+                const meta = element('div', 'tracking-person-element-meta');
+                metaParts.forEach((itemMeta) => {
+                    const chip = element('span', 'tracking-person-element-chip');
+                    chip.append(
+                        element('b', '', itemMeta.label),
+                        element('span', '', itemMeta.value),
+                    );
+                    meta.append(chip);
+                });
+                main.append(meta);
+            }
+
+            article.append(
+                main,
+                element('span', 'tracking-person-element-index', String(index + 1).padStart(2, '0')),
+            );
+            fragment.append(article);
+        });
+
+        list.replaceChildren(fragment);
+    }
+
+    function openPersonDetail(index) {
+        const person = currentPersonnel[index];
+        const backdrop = document.getElementById('tracking-person-detail-backdrop');
+        const dialog = document.getElementById('tracking-person-detail-dialog');
+        if (!person || !backdrop || !dialog) return;
+
+        lastFocusedElement = document.activeElement;
+        openPersonIndex = index;
+        renderPersonDetail(person);
+        backdrop.hidden = false;
+        syncBodyScrollLock();
+        window.requestAnimationFrame(() => dialog.focus());
+    }
+
+    function closePersonDetail() {
+        const backdrop = document.getElementById('tracking-person-detail-backdrop');
+        if (!backdrop || backdrop.hidden) return;
+
+        backdrop.hidden = true;
+        openPersonIndex = null;
+        syncBodyScrollLock();
+        if (lastFocusedElement instanceof HTMLElement) lastFocusedElement.focus();
+    }
+
+    function setupPersonDetail() {
+        const personnelList = document.getElementById('tracking-person-list');
+        if (personnelList) {
+            personnelList.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-person-index]');
+                if (!button || !personnelList.contains(button)) return;
+
+                const index = Number(button.dataset.personIndex);
+                if (Number.isInteger(index)) openPersonDetail(index);
+            });
+        }
+
+        document.querySelectorAll('[data-close-person-detail]').forEach((button) => {
+            button.addEventListener('click', closePersonDetail);
+        });
+
+        const backdrop = document.getElementById('tracking-person-detail-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', (event) => {
+                if (event.target === backdrop) closePersonDetail();
+            });
+        }
+    }
+
+    async function refreshTracking() {
+        if (document.hidden || refreshInProgress || !config.refreshUrl) return;
+        refreshInProgress = true;
+
+        try {
+            const response = await fetch(config.refreshUrl, {
+                cache: 'no-store',
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            });
+
+            if (!response.ok) return;
+            applyTrackingData(await response.json());
+        } catch (_) {
+        } finally {
+            refreshInProgress = false;
+        }
+    }
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+
+        const photoPreviewBackdrop = document.getElementById('tracking-photo-preview-backdrop');
+        if (photoPreviewBackdrop && !photoPreviewBackdrop.hidden) {
+            closePhotoPreview();
+            return;
+        }
+
+        const photoManagerBackdrop = document.getElementById('tracking-photo-manager-backdrop');
+        if (photoManagerBackdrop && !photoManagerBackdrop.hidden) {
+            closePhotoManager();
+            return;
+        }
+
+        const personBackdrop = document.getElementById('tracking-person-detail-backdrop');
+        if (personBackdrop && !personBackdrop.hidden) {
+            closePersonDetail();
+            return;
+        }
+
+        closeActivityDrawer();
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        setupTrackingWorkspace();
+        setupPersonnelSearch();
+        setupActivityTabs();
+        setupActivityDrawer();
+        setupPersonDetail();
+        setupPhotoManager();
+        setupPhotoPreview();
+        applyTrackingData(initialData);
+        window.setInterval(refreshTracking, refreshIntervalMs);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) refreshTracking();
+        });
+    });
+})();
