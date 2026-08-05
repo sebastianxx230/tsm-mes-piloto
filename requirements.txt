@@ -7,7 +7,7 @@ whitenoise==6.6.0
 Flask-SQLAlchemy==3.1.1
 python-dotenv==1.2.2
 google-api-python-client==2.128.0
-google-auth==2.29.0
+google-auth==2.56.2
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.0
 Flask-Login==0.6.3
