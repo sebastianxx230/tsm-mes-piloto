@@ -1,0 +1,12 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tsm-mes-piloto:local
+    env_file:
+      - .env.container
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    stop_grace_period: 30s

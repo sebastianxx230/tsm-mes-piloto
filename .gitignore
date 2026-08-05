@@ -2,6 +2,9 @@
 Folder.DotSettings.user
 .idea/
 .env
+.env.*
+!.env.example
+!.env.*.example
 *.env
 __pycache__/
 *.py[cod]
