@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app import _normalize_database_url
+from app import _classify_database_error, _normalize_database_url
 from models.catalogo_ot import CatalogoOT
 
 
@@ -30,6 +30,19 @@ def test_database_url_normalizes_common_dashboard_pastes():
     assert _normalize_database_url(f"psql '{expected}'") == expected
     assert _normalize_database_url(f'  DATABASE_URL="{expected}"  ') == expected
     assert _normalize_database_url('sqlite:///test.sqlite') == 'sqlite:///test.sqlite'
+
+
+def test_database_error_classification_does_not_expose_details():
+    assert _classify_database_error(
+        RuntimeError('password authentication failed for user "example"')
+    ) == 'authentication_failed'
+    assert _classify_database_error(
+        RuntimeError('could not translate host name "example.invalid"')
+    ) == 'dns_failed'
+    assert _classify_database_error(
+        RuntimeError('invalid dsn: invalid connection option "channel_binding"')
+    ) == 'invalid_connection_option'
+    assert _classify_database_error(RuntimeError('unexpected database error')) == 'connection_failed'
 
 
 def test_logout_requires_post_and_clears_session(client, login):

@@ -46,6 +46,50 @@ def _normalize_database_url(raw_value):
 
     return value
 
+
+def _classify_database_error(error):
+    """Return a safe diagnostic code without exposing the database URL."""
+    messages = []
+    current = error
+    visited = set()
+
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        messages.append(str(current).lower())
+        current = getattr(current, 'orig', None) or getattr(current, '__cause__', None)
+
+    message = ' '.join(messages)
+
+    if any(marker in message for marker in (
+        'password authentication failed',
+        'authentication failed',
+        'tenant or user not found',
+    )):
+        return 'authentication_failed'
+    if any(marker in message for marker in (
+        'could not translate host name',
+        'name or service not known',
+        'nodename nor servname provided',
+        'getaddrinfo failed',
+    )):
+        return 'dns_failed'
+    if 'connection refused' in message:
+        return 'connection_refused'
+    if any(marker in message for marker in ('timeout expired', 'timed out', 'connection timeout')):
+        return 'connection_timeout'
+    if 'database' in message and 'does not exist' in message:
+        return 'database_not_found'
+    if 'role' in message and 'does not exist' in message:
+        return 'role_not_found'
+    if any(marker in message for marker in ('invalid connection option', 'invalid dsn')):
+        return 'invalid_connection_option'
+    if any(marker in message for marker in ('ssl error', 'certificate verify failed')):
+        return 'ssl_error'
+    if any(marker in message for marker in ('network is unreachable', 'network unreachable')):
+        return 'network_unavailable'
+
+    return 'connection_failed'
+
 app = Flask(
     __name__,
     template_folder='templates',
@@ -166,10 +210,19 @@ def health():
     """Comprueba que la aplicación y PostgreSQL están disponibles."""
     try:
         db.session.execute(text('SELECT 1'))
-    except Exception:
+    except Exception as error:
+        reason = _classify_database_error(error)
         db.session.rollback()
-        app.logger.exception('healthcheck_database_failed')
-        return jsonify({'status': 'unhealthy', 'database': 'unavailable'}), 503
+        app.logger.error(
+            'healthcheck_database_failed reason=%s exception_type=%s',
+            reason,
+            type(error).__name__,
+        )
+        return jsonify({
+            'status': 'unhealthy',
+            'database': 'unavailable',
+            'reason': reason,
+        }), 503
 
     return jsonify({'status': 'ok', 'database': 'available'})
 
