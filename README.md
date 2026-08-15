@@ -93,12 +93,15 @@ y construcción de la imagen Docker en cada pull request y cambio a `main`.
 ## Ejecución con Docker
 
 ```bash
-docker build -t tsm25 .
-docker run --env-file .env -p 8000:8000 tsm25
+copy .env.container.example .env.container
+docker compose build
+docker compose up -d
+python scripts/smoke_render.py http://localhost:8000
 ```
 
-El contenedor ejecuta Gunicorn como usuario sin privilegios. El endpoint
-`GET /health` comprueba tanto Flask como la conexión a PostgreSQL.
+El contenedor ejecuta Gunicorn como usuario sin privilegios. `GET /health/live`
+comprueba el proceso sin despertar continuamente a Neon; `GET /health`
+comprueba Flask y la conexión a PostgreSQL.
 
 ## Google Drive y conteo de fotos
 
@@ -112,6 +115,7 @@ Se cuentan imágenes únicas de la carpeta de la OT y de sus subcarpetas directa
 - [Backup y restauración](docs/BACKUP_RESTORE.md)
 - [Retención de datos](docs/DATA_RETENTION.md)
 - [Operación del piloto y transición](docs/PILOT_RUNBOOK.md)
+- [Despliegue Docker en Render](docs/RENDER_DEPLOYMENT.md)
 
 Los logs se emiten como JSON e incluyen un `request_id`, estado HTTP y duración.
 Puede enviar `X-Request-ID` desde un proxy para correlacionar peticiones.
@@ -128,6 +132,11 @@ preparados en `public/`. Sus funciones limitan solicitudes y respuestas a
 4.5 MB; para reportes y documentos pesados use el contenedor. Vercel Hobby no
 permite uso comercial, por lo que una empresa debe usar Pro o un hosting de
 contenedores con términos adecuados.
+
+El despliegue recomendado para el piloto es el Blueprint `render.yaml`: Docker,
+Render Starter, una instancia y despliegue de `main` solo cuando CI aprueba.
+Siga `docs/RENDER_DEPLOYMENT.md`; no agregue la URL propietaria de migraciones
+al servicio Render.
 
 ## Limitaciones conocidas
 

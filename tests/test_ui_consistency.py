@@ -106,3 +106,15 @@ def test_empty_document_states_are_centered_in_the_panel():
     assert 'width: 100%;' in document_css
     assert 'align-items: center;' in document_css
     assert 'text-align: center;' in document_css
+
+
+def test_tracking_workspace_has_no_decorative_material_icons():
+    tracking_template = read('templates/seguimiento.html')
+    tracking_script = read('static/js/seguimiento.js')
+    document_script = read('static/js/seguimiento_documentos.js')
+
+    assert '>deployed_code</' not in tracking_template
+    assert '>engineering</' not in tracking_template
+    assert 'tracking-lot-icon material-symbols-rounded' not in tracking_script
+    assert "'tracking-avatar', person.initials" not in tracking_script
+    assert 'tracking-document-open-indicator material-symbols-rounded' not in document_script

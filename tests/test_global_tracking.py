@@ -7,7 +7,9 @@ from models.produccion import ComponenteOT
 def test_global_tracking_requires_login(client):
     response = client.get('/api/produccion/buscar_codigo/TEST-001')
 
-    assert response.status_code == 302
+    assert response.status_code == 401
+    assert response.is_json
+    assert response.get_json()['code'] == 'authentication_required'
 
 
 def test_global_tracking_keeps_exact_and_prefix_searches_case_insensitive(

@@ -51,7 +51,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   docker:
+    needs: test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: tsm_container_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tsm_container_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,3 +77,45 @@ jobs:
           context: .
           push: false
           tags: tsm25:ci
+          load: true
+      - name: Apply migrations from the image
+        run: >-
+          docker run --rm
+          --add-host host.docker.internal:host-gateway
+          -e FLASK_APP=app.py
+          -e APP_ENV=test
+          -e SECRET_KEY=container-ci-only-secret-key-with-more-than-32-characters
+          -e DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/tsm_container_test
+          -e MIGRATIONS_DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/tsm_container_test
+          tsm25:ci python -m flask db upgrade
+      - name: Start the production container
+        run: >-
+          docker run --detach --name tsm25-ci-web
+          --add-host host.docker.internal:host-gateway
+          -p 8000:8000
+          -e APP_ENV=production
+          -e SECRET_KEY=container-ci-only-secret-key-with-more-than-32-characters
+          -e DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/tsm_container_test
+          -e CHECK_DATABASE_ON_STARTUP=True
+          -e SESSION_COOKIE_SECURE=False
+          -e WEB_CONCURRENCY=1
+          -e WEB_THREADS=2
+          tsm25:ci
+      - name: Verify liveness and database readiness
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/health/live >/dev/null && \
+               curl --fail --silent http://127.0.0.1:8000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs tsm25-ci-web
+          exit 1
+      - name: Print container logs on failure
+        if: failure()
+        run: docker logs tsm25-ci-web
+      - name: Remove smoke-test container
+        if: always()
+        run: docker rm --force tsm25-ci-web || true

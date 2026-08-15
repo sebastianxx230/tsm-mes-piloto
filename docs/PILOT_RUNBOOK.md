@@ -5,13 +5,13 @@
 - Aplicación: una sola aplicación Flask; no dividirla en microservicios.
 - Base de datos: Neon PostgreSQL. `DATABASE_URL` usa el endpoint `-pooler` y
   `MIGRATIONS_DATABASE_URL` usa el endpoint directo.
-- Despliegue completo: imagen Docker para reportes, documentos y respuestas de
-  hasta 50 MB.
+- Despliegue productivo: una instancia Docker Render Starter para reportes,
+  documentos y respuestas de hasta 50 MB.
 - Despliegue temporal Vercel: válido para navegación y operaciones ligeras; sus
   funciones limitan solicitudes y respuestas a 4.5 MB. Configure
   `MAX_CONTENT_MB=4` allí.
-- Dominio: use desde el piloto un subdominio controlado por la empresa, por
-  ejemplo `mes.empresa.com`. El cambio posterior de hosting será un cambio DNS.
+- Dominio: no es obligatorio para el piloto. Use la URL HTTPS `onrender.com` y
+  agregue posteriormente un dominio neutral controlado por el titular.
 - Límite de intentos: use Redis compartido en Vercel o en más de una instancia.
   `memory://` solo es correcto para un único contenedor.
 
@@ -41,10 +41,10 @@ permitan uso comercial.
    flask db upgrade
    ```
 
-4. Despliegue primero como preview.
+4. Despliegue primero contra la rama Neon `pilot-preview`.
 5. Ejecute la lista de humo de este documento.
-6. Promueva exactamente el artefacto verificado; no reconstruya otro commit.
-7. Revise `/health` y logs durante los primeros 30 minutos.
+6. Despliegue en producción exactamente el mismo commit verificado.
+7. Revise `/health/live`, `/health` y logs durante los primeros 30 minutos.
 
 Las migraciones del piloto son aditivas. Si hay que volver a una versión previa
 de la aplicación, deje el esquema actualizado y revierta solo el artefacto. No
@@ -52,6 +52,7 @@ ejecute `flask db downgrade` durante un incidente sin validar antes una copia.
 
 ## Prueba de humo obligatoria
 
+- `/health/live` responde `200` y confirma que el contenedor está operativo.
 - `/health` responde `200` y confirma PostgreSQL disponible.
 - Admin, editor y lector pueden iniciar sesión; cada rol ve únicamente sus
   acciones permitidas.
@@ -92,7 +93,7 @@ ejecute `flask db downgrade` durante un incidente sin validar antes una copia.
 1. Congelar cambios funcionales durante la ventana.
 2. Hacer backup final y prueba de restauración.
 3. Crear la nueva base, aplicar migraciones y restaurar.
-4. Desplegar el mismo commit en el nuevo hosting y validar con dominio temporal.
-5. Bajar el TTL DNS con antelación y cambiar solo el DNS del subdominio MES.
-6. Mantener el entorno anterior en solo lectura durante siete días.
+4. Desplegar el mismo commit en el nuevo hosting y validar con su URL temporal.
+5. Si ya existe dominio, bajar el TTL DNS y cambiar únicamente el DNS.
+6. Mantener el entorno anterior sin permisos de escritura durante siete días.
 7. Cambiar hosting y base en ventanas separadas cuando sea posible.

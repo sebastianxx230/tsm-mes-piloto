@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from app import _classify_database_error, _normalize_database_url
+from db_config import db
 from models.catalogo_ot import CatalogoOT
 
 
@@ -10,6 +11,24 @@ def test_health_checks_database(client):
     assert response.status_code == 200
     assert response.get_json() == {'status': 'ok', 'database': 'available'}
     assert response.headers['X-Request-ID'] == 'health-test'
+
+
+def test_liveness_does_not_query_database(client, monkeypatch):
+    def fail_if_queried(*_args, **_kwargs):
+        raise AssertionError('The liveness endpoint must not query PostgreSQL')
+
+    monkeypatch.setattr(db.session, 'execute', fail_if_queried)
+    response = client.get('/health/live')
+
+    assert response.status_code == 200
+    assert response.get_json() == {'status': 'ok', 'service': 'tsm-mes'}
+
+
+def test_readiness_alias_checks_database(client):
+    response = client.get('/health/ready')
+
+    assert response.status_code == 200
+    assert response.get_json() == {'status': 'ok', 'database': 'available'}
 
 
 def test_secret_key_has_no_source_fallback():
@@ -168,3 +187,22 @@ def test_photo_count_is_deduplicated_and_cached(client, login, ids, monkeypatch)
     assert first.get_json()['cached'] is False
     assert second.get_json()['cached'] is True
     assert calls['count'] == 1
+
+
+def test_report_image_is_compressed_to_rendered_budget(monkeypatch):
+    from PIL import Image
+    import controllers.reporte_fotografico_controller as report_controller
+
+    monkeypatch.setattr(report_controller, 'REPORT_OUTPUT_MAX_WIDTH', 640)
+    monkeypatch.setattr(report_controller, 'REPORT_OUTPUT_JPEG_QUALITY', 70)
+    monkeypatch.setattr(
+        report_controller,
+        'MAX_REPORT_RENDERED_IMAGE_BYTES',
+        80 * 1024,
+    )
+    image = Image.effect_noise((1400, 1050), 80).convert('RGB')
+
+    encoded, encoded_size = report_controller._prepare_report_image(image)
+
+    assert encoded
+    assert encoded_size <= 80 * 1024

@@ -40,6 +40,44 @@
         return Number.isFinite(number) ? number : 0;
     }
 
+    function responseStatusMessage(status, fallback) {
+        const messages = {
+            401: 'Tu sesión venció. Inicia sesión nuevamente y vuelve a intentarlo.',
+            403: 'No tienes permiso para realizar esta operación.',
+            404: 'No se encontró la información solicitada.',
+            413: 'La selección supera el tamaño permitido por el servidor.',
+            429: 'Se realizaron demasiadas solicitudes. Espera un momento.',
+            500: 'El servidor no pudo completar la operación.',
+            502: 'Google Drive no respondió correctamente.',
+            503: 'El servicio no está disponible en este momento.',
+            504: 'La operación tardó demasiado y fue interrumpida.',
+        };
+        return messages[status] || fallback;
+    }
+
+    async function readApiJson(response, fallback) {
+        const rawBody = await response.text();
+        let payload = null;
+        if (rawBody.trim()) {
+            try {
+                payload = JSON.parse(rawBody);
+            } catch (_) {
+                payload = null;
+            }
+        }
+
+        if (!response.ok) {
+            const serverMessage = payload && typeof payload.error === 'string'
+                ? payload.error.trim()
+                : '';
+            throw new Error(serverMessage || responseStatusMessage(response.status, fallback));
+        }
+        if (!payload || typeof payload !== 'object') {
+            throw new Error(responseStatusMessage(response.status, fallback));
+        }
+        return payload;
+    }
+
     function clampProgress(value) {
         return Math.min(100, Math.max(0, toNumber(value)));
     }
@@ -128,13 +166,12 @@
 
     function createEmptyState(iconName, title, description, extraClass = '') {
         const empty = element('div', `tracking-empty ${extraClass}`.trim());
-        const icon = element('span', 'material-symbols-rounded', iconName);
-        icon.setAttribute('aria-hidden', 'true');
-        empty.append(
-            icon,
-            element('strong', '', title),
-            element('p', '', description),
-        );
+        if (iconName) {
+            const icon = element('span', 'material-symbols-rounded', iconName);
+            icon.setAttribute('aria-hidden', 'true');
+            empty.append(icon);
+        }
+        empty.append(element('strong', '', title), element('p', '', description));
         return empty;
     }
 
@@ -221,7 +258,7 @@
 
         if (!safeLots.length) {
             fragment.append(createEmptyState(
-                'inventory_2',
+                null,
                 'Aún no hay lotes registrados',
                 'El avance aparecerá cuando Producción cargue la información de esta OT.',
             ));
@@ -235,8 +272,6 @@
             const progress = clampProgress(lot.progress);
 
             const article = element('article', 'tracking-lot');
-            const lotIcon = element('div', 'tracking-lot-icon material-symbols-rounded', 'deployed_code');
-            lotIcon.setAttribute('aria-hidden', 'true');
             const content = element('div', 'tracking-lot-content');
             const top = element('div', 'tracking-lot-top');
             const name = element('div', 'tracking-lot-name');
@@ -267,7 +302,7 @@
 
             const completedLabel = `${completedCount} de ${elementCount} ${plural(elementCount, 'elemento completado', 'elementos completados')}`;
             content.append(top, progressBar, element('p', 'tracking-lot-foot', completedLabel));
-            article.append(lotIcon, content);
+            article.append(content);
             fragment.append(article);
         });
 
@@ -340,7 +375,7 @@
 
         if (!safePersonnel.length) {
             fragment.append(createEmptyState(
-                'engineering',
+                null,
                 'Sin personal asignado',
                 'Producción todavía no registró operarios en los elementos.',
                 'tracking-empty-personnel',
@@ -368,19 +403,13 @@
                 ),
             );
 
-            main.append(
-                element('span', 'tracking-avatar', person.initials || getInitials(personName, 'OP')),
-                body,
-            );
+            main.append(body);
 
             const detailButton = element('button', 'tracking-person-action');
             detailButton.type = 'button';
             detailButton.dataset.personIndex = String(index);
             detailButton.setAttribute('aria-label', `Ver detalle de participación de ${personName}`);
-            detailButton.append(
-                element('span', '', 'Detalle'),
-                element('span', 'material-symbols-rounded', 'chevron_right'),
-            );
+            detailButton.textContent = 'Detalle';
 
             article.append(main, detailButton);
             fragment.append(article);
@@ -407,7 +436,7 @@
                 ? 'Selecciona evidencias de Drive para mostrarlas en esta vista.'
                 : 'El administrador todavía no seleccionó fotografías para esta OT.';
             fragment.append(createEmptyState(
-                'photo_library',
+                null,
                 'Aún no hay fotografías publicadas',
                 description,
                 'tracking-photo-empty',
@@ -432,9 +461,7 @@
             image.alt = photoName;
             image.loading = 'lazy';
 
-            const zoom = element('span', 'tracking-photo-zoom material-symbols-rounded', 'zoom_in');
-            zoom.setAttribute('aria-hidden', 'true');
-            button.append(image, zoom);
+            button.append(image);
             figure.append(button, element('figcaption', '', photoName));
             fragment.append(figure);
         });
@@ -713,9 +740,15 @@
             const response = await fetch(config.photoCandidatesUrl, {
                 cache: 'no-store',
                 credentials: 'same-origin',
-                headers: { Accept: 'application/json' },
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
             });
-            const payload = await response.json();
+            const payload = await readApiJson(
+                response,
+                'No fue posible consultar Google Drive.',
+            );
             if (!response.ok || !payload.success || !Array.isArray(payload.fotos)) {
                 throw new Error(payload.error || 'No fue posible consultar Google Drive.');
             }
@@ -755,10 +788,14 @@
                     Accept: 'application/json',
                     'Content-Type': 'application/json',
                     'X-CSRFToken': config.csrfToken || '',
+                    'X-Requested-With': 'XMLHttpRequest',
                 },
                 body: JSON.stringify({ photos }),
             });
-            const payload = await response.json();
+            const payload = await readApiJson(
+                response,
+                'No fue posible guardar la selección.',
+            );
             if (!response.ok || !payload.success || !Array.isArray(payload.photos)) {
                 throw new Error(payload.error || 'No fue posible guardar la selección.');
             }
@@ -923,7 +960,6 @@
         const lotCount = toNumber(person?.lot_count);
         const list = document.getElementById('tracking-person-detail-list');
 
-        setText('tracking-person-detail-avatar', person?.initials || getInitials(personName, 'OP'));
         setText('tracking-person-detail-name', personName);
         setText('tracking-person-detail-processes', processes);
         setText('tracking-person-detail-element-count', elements.length || declaredElementCount);
@@ -938,10 +974,7 @@
 
         if (!elements.length) {
             const empty = element('div', 'tracking-person-detail-empty');
-            const icon = element('span', 'material-symbols-rounded', 'assignment_late');
-            icon.setAttribute('aria-hidden', 'true');
             empty.append(
-                icon,
                 element('strong', '', 'No se recibió el detalle de los elementos'),
                 element(
                     'p',
@@ -1048,12 +1081,18 @@
             const response = await fetch(config.refreshUrl, {
                 cache: 'no-store',
                 credentials: 'same-origin',
-                headers: { Accept: 'application/json' },
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
             });
 
-            if (!response.ok) return;
-            applyTrackingData(await response.json());
-        } catch (_) {
+            applyTrackingData(await readApiJson(
+                response,
+                'No se pudo actualizar la vista de seguimiento.',
+            ));
+        } catch (error) {
+            console.warn('No se pudo actualizar Seguimiento:', error.message);
         } finally {
             refreshInProgress = false;
         }

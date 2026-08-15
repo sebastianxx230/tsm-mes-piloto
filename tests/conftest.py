@@ -15,6 +15,9 @@ else:
     TEST_DATABASE_PATH = Path(tempfile.gettempdir()) / f'tsm25-tests-{os.getpid()}.sqlite'
     os.environ['DATABASE_URL'] = f"sqlite:///{TEST_DATABASE_PATH.as_posix()}"
 os.environ['SECRET_KEY'] = 'test-only-secret-key'
+os.environ['APP_ENV'] = 'test'
+os.environ['CHECK_DATABASE_ON_STARTUP'] = 'False'
+os.environ['RATELIMIT_STORAGE_URI'] = 'memory://'
 
 from app import app as flask_app
 from db_config import db

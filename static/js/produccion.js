@@ -224,6 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cargarTabs();
         iniciarAutoSync();
         configurarDetalleElemento();
+        configurarNavegacionSegura();
         configurarMatrizDesplazable();
         const endDateInput = document.getElementById('fecha-termino-input');
         if (endDateInput) endDateInput.dataset.previous = endDateInput.value;
@@ -611,8 +612,11 @@ const nombresTipos = {
 function parseOperarios(str) {
     let op = {}; if(!str) return op;
     str.split('|').forEach(pair => {
-        let parts = pair.split(':');
-        if(parts.length === 2) op[parts[0]] = parts[1];
+        const separatorIndex = pair.indexOf(':');
+        if (separatorIndex <= 0) return;
+        const processKey = pair.slice(0, separatorIndex).trim();
+        const names = pair.slice(separatorIndex + 1).trim();
+        if (processKey) op[processKey] = names;
     });
     return op;
 }
@@ -797,6 +801,7 @@ async function guardarCampoComponente(componentId, campo, valor) {
     try {
         const res = await fetch('/api/produccion/actualizar_celda', {
             method: 'POST',
+            keepalive: true,
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCsrfToken()
@@ -826,6 +831,14 @@ async function guardarCampoComponente(componentId, campo, valor) {
     }
 }
 
+function encolarGuardadoComponente(componentId, campo, valor) {
+    const pendingSave = cellSaveQueue.then(
+        () => guardarCampoComponente(componentId, campo, valor),
+    );
+    cellSaveQueue = pendingSave.catch(() => false);
+    return pendingSave;
+}
+
 function hayGuardadosCeldaPendientes() {
     return cellSaveInFlight || cellSaveTimers.size > 0;
 }
@@ -837,9 +850,7 @@ function programarGuardadoCelda(componentId, campo, valor) {
 
     const timerId = window.setTimeout(() => {
         cellSaveTimers.delete(key);
-        cellSaveQueue = cellSaveQueue
-            .then(() => guardarCampoComponente(componentId, campo, valor))
-            .catch(() => false);
+        encolarGuardadoComponente(componentId, campo, valor);
     }, CELL_SAVE_DELAY_MS);
 
     cellSaveTimers.set(key, timerId);
@@ -1661,20 +1672,66 @@ function toggleNA(proc, isChecked, cant) {
 
 async function guardarOpProceso(proc, nombre) {
     if (!canEdit || !currentDetalleRow) return;
-    const hiddenOperator = currentDetalleRow.querySelector('.input-operario');
-    if (!hiddenOperator) return;
+    const operatorRow = currentDetalleRow;
+    const hiddenOperator = operatorRow.querySelector('.input-operario');
+    if (!hiddenOperator || !operatorRow.dataset.id) return;
 
     const operatorMap = parseOperarios(hiddenOperator.value);
     operatorMap[proc] = normalizeOperatorNames(nombre);
     const previousValue = hiddenOperator.value;
-    hiddenOperator.value = stringifyOperarios(operatorMap);
+    const nextValue = stringifyOperarios(operatorMap);
+    hiddenOperator.value = nextValue;
 
-    const saved = await actualizarCampoSimple(hiddenOperator, 'operario');
+    const saved = await encolarGuardadoComponente(
+        operatorRow.dataset.id,
+        'operario',
+        nextValue,
+    );
     if (saved) {
         mostrarAlerta('Operarios actualizados.', 'exito');
     } else {
-        hiddenOperator.value = previousValue;
+        if (hiddenOperator.value === nextValue) hiddenOperator.value = previousValue;
     }
+}
+
+function configurarNavegacionSegura() {
+    const trackingLink = document.querySelector('[data-wait-for-production-saves]');
+    if (!trackingLink || !canEdit) return;
+
+    trackingLink.addEventListener('click', async (event) => {
+        if (
+            event.defaultPrevented
+            || event.button !== 0
+            || event.ctrlKey
+            || event.metaKey
+            || event.shiftKey
+            || event.altKey
+        ) return;
+
+        event.preventDefault();
+        const destination = trackingLink.href;
+        if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+        }
+        await Promise.resolve();
+
+        if (cellSaveTimers.size > 0) {
+            await new Promise((resolve) => window.setTimeout(
+                resolve,
+                CELL_SAVE_DELAY_MS + 50,
+            ));
+        }
+
+        trackingLink.setAttribute('aria-busy', 'true');
+        trackingLink.classList.add('pointer-events-none', 'opacity-60');
+        const saved = await cellSaveQueue;
+        if (saved === false) {
+            trackingLink.removeAttribute('aria-busy');
+            trackingLink.classList.remove('pointer-events-none', 'opacity-60');
+            return;
+        }
+        window.location.assign(destination);
+    });
 }
 
 

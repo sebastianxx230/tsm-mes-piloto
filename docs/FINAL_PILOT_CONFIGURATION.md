@@ -1,43 +1,59 @@
-# Configuracion final del piloto
+# Configuración final del piloto
 
 ## Archivos de variables
 
-- `.env.example`: copiar a `.env` solo para desarrollo/migraciones locales.
-- `.env.vercel.example`: inventario de variables para Vercel Production. No
-  contiene `MIGRATIONS_DATABASE_URL` para no entregar permisos de propietario
-  al runtime.
-- `.env.container.example`: copiar a `.env.container` para Docker.
+- `.env.example`: desarrollo y migraciones locales.
+- `.env.vercel.example`: inventario temporal para Vercel.
+- `.env.container.example`: ejecución local con Docker.
+- `render.yaml`: configuración productiva de Render, incluidos los nombres de
+  secretos que se proporcionan exclusivamente desde el Dashboard.
 
-Los archivos `.env` y `.env.container` reales quedan excluidos tanto de Git
-como de la imagen Docker. `credentials.json` tambien esta excluido; en
-produccion se usa `GOOGLE_CREDENTIALS`.
+Los archivos `.env` y `.env.container` reales quedan excluidos de Git y de la
+imagen Docker. `credentials.json` también está excluido; en producción se usa
+`GOOGLE_CREDENTIALS`.
 
-## app.py
+`MIGRATIONS_DATABASE_URL` nunca se configura en Vercel o Render. Solo se usa
+desde un equipo controlado para migraciones y backups.
 
-El `app.py` del piloto ya valida `SECRET_KEY` y `DATABASE_URL`, usa cookies
-seguras, CSRF, `ProxyFix`, limites de carga, `NullPool` en Vercel y el endpoint
-`/health`. No requiere otro cambio para esta etapa.
+## Aplicación
 
-## Vercel
+`app.py` valida `SECRET_KEY` y `DATABASE_URL`, usa cookies seguras, CSRF,
+`ProxyFix`, límites de carga y pool de conexiones fuera de Vercel.
 
-Vercel ejecuta `app.py` como una Function de Python. Use el perfil limitado de
-`.env.vercel.example`. La respuesta HTML del reporte contiene fotografias en
-Base64, por lo que los reportes grandes pueden superar el limite de payload de
-Vercel incluso si el tiempo de ejecucion es suficiente.
+- `/health/live`: liveness sin consulta a PostgreSQL. Es el health check de
+  Docker y Render para no mantener despierto continuamente el compute Neon.
+- `/health` y `/health/ready`: verificación profunda de Flask y PostgreSQL.
+- `CHECK_DATABASE_ON_STARTUP=True`: evita publicar un contenedor con
+  credenciales PostgreSQL inválidas.
 
-## Docker
+## Render
 
-Docker ejecuta la aplicacion Flask completa con Gunicorn. No es un segundo
-programa exclusivo para fotografias. Permite usar el perfil de reportes grande
-cuando se despliega en un proveedor de contenedores que acepte esos tamanos.
+El objetivo productivo es una instancia Docker Starter administrada por
+`render.yaml`. La configuración inicial usa un proceso Gunicorn, cuatro hilos y
+dos workers internos de reportes para mantenerse dentro de 512 MB.
 
-Preparacion local en Windows:
+Antes de crear el servicio, haga coincidir la región de Render con la región del
+proyecto Neon. La región de Render no puede modificarse después de crear el
+servicio.
+
+Siga `docs/RENDER_DEPLOYMENT.md` para el ensayo con `pilot-preview`, la ventana
+de corte, smoke test y rollback.
+
+## Docker local
 
 1. Instale WSL 2 y Docker Desktop.
 2. Copie `.env.container.example` a `.env.container` y complete los secretos.
 3. Ejecute `docker compose build`.
 4. Ejecute `docker compose up -d`.
-5. Compruebe `http://localhost:8000/health`.
+5. Ejecute `python scripts/smoke_render.py http://localhost:8000`.
+6. Al terminar, ejecute `docker compose down`.
 
-El sistema actual no tiene Docker Desktop ni WSL instalados, por lo que la
-construccion del contenedor debe verificarse despues de instalarlos.
+El repositorio contiene CI para construir la imagen, aplicar migraciones sobre
+un PostgreSQL desechable, iniciar el contenedor y validar ambos endpoints de
+salud.
+
+## Vercel durante la transición
+
+Vercel puede conservarse durante la prueba aislada, pero no se deben entregar
+Vercel y Render a usuarios escribiendo simultáneamente sobre Neon producción.
+Una vez validado Render, retire a Vercel su credencial runtime.

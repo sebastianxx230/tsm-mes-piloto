@@ -33,6 +33,8 @@ from models.catalogo_ot import CatalogoOT
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 reporte_bp = Blueprint('reporte_bp', __name__, template_folder='../templates')
 
+IS_VERCEL = bool(os.environ.get('VERCEL'))
+
 MAX_REPORT_IMAGES = max(1, int(os.environ.get('MAX_REPORT_IMAGES', '20')))
 MAX_REPORT_LOCAL_IMAGES = max(
     0,
@@ -61,6 +63,41 @@ MAX_REPORT_TEXT_LENGTH = max(
 REPORT_WORKERS = min(
     4,
     max(1, int(os.environ.get('REPORT_WORKERS', '3'))),
+)
+REPORT_OUTPUT_MAX_WIDTH = max(
+    320,
+    int(os.environ.get(
+        'REPORT_OUTPUT_MAX_WIDTH',
+        '640' if IS_VERCEL else '800',
+    )),
+)
+REPORT_OUTPUT_JPEG_QUALITY = min(
+    90,
+    max(
+        45,
+        int(os.environ.get(
+            'REPORT_OUTPUT_JPEG_QUALITY',
+            '70' if IS_VERCEL else '82',
+        )),
+    ),
+)
+MAX_REPORT_RENDERED_IMAGE_BYTES = max(
+    128 * 1024,
+    int(os.environ.get(
+        'MAX_REPORT_RENDERED_IMAGE_BYTES',
+        str(380 * 1024 if IS_VERCEL else 2 * 1024 * 1024),
+    )),
+)
+MAX_REPORT_RENDERED_TOTAL_BYTES = max(
+    MAX_REPORT_RENDERED_IMAGE_BYTES,
+    int(os.environ.get(
+        'MAX_REPORT_RENDERED_TOTAL_BYTES',
+        str(2400 * 1024 if IS_VERCEL else 20 * 1024 * 1024),
+    )),
+)
+DRIVE_HTTP_TIMEOUT_SECONDS = max(
+    5,
+    int(os.environ.get('DRIVE_HTTP_TIMEOUT_SECONDS', '25')),
 )
 REPORT_RATE_LIMIT = os.environ.get('REPORT_RATE_LIMIT', '3 per minute')
 ALLOW_PARTIAL_DRIVE_FOLDER_MATCH = os.environ.get(
@@ -132,12 +169,16 @@ def get_drive_service():
                 scopes=SCOPES,
             )
         )
-        return googleapiclient.discovery.build(
+        service = googleapiclient.discovery.build(
             'drive',
             'v3',
             credentials=credentials,
             cache_discovery=False,
         )
+        service_http = getattr(service, '_http', None)
+        if service_http is not None:
+            service_http.timeout = DRIVE_HTTP_TIMEOUT_SECONDS
+        return service
     except Exception:
         current_app.logger.exception('google_drive_client_creation_failed')
         return None
@@ -514,21 +555,60 @@ def _prepare_report_image(image, already_cropped=False):
             offset = max((width - new_width) // 2, 0)
             image = image.crop((offset, 0, offset + new_width, height))
 
-    if image.width > 800:
-        ratio = 800 / image.width
+    if image.width > REPORT_OUTPUT_MAX_WIDTH:
+        ratio = REPORT_OUTPUT_MAX_WIDTH / image.width
         resampling = getattr(Image, 'Resampling', Image)
         lanczos = getattr(resampling, 'LANCZOS', Image.BICUBIC)
         image = image.resize(
-            (800, max(1, int(image.height * ratio))),
+            (REPORT_OUTPUT_MAX_WIDTH, max(1, int(image.height * ratio))),
             lanczos,
         )
 
     if image.mode != 'RGB':
         image = image.convert('RGB')
 
-    output = io.BytesIO()
-    image.save(output, format='JPEG', quality=82, optimize=True)
-    return base64.b64encode(output.getvalue()).decode('utf-8')
+    resampling = getattr(Image, 'Resampling', Image)
+    lanczos = getattr(resampling, 'LANCZOS', Image.BICUBIC)
+    working_image = image
+    minimum_width = min(320, working_image.width)
+
+    while True:
+        quality_values = [
+            REPORT_OUTPUT_JPEG_QUALITY,
+            max(55, REPORT_OUTPUT_JPEG_QUALITY - 10),
+            45,
+        ]
+        for quality in dict.fromkeys(quality_values):
+            output = io.BytesIO()
+            working_image.save(
+                output,
+                format='JPEG',
+                quality=quality,
+                optimize=True,
+            )
+            encoded_bytes = output.getvalue()
+            if len(encoded_bytes) <= MAX_REPORT_RENDERED_IMAGE_BYTES:
+                return (
+                    base64.b64encode(encoded_bytes).decode('ascii'),
+                    len(encoded_bytes),
+                )
+
+        if working_image.width <= minimum_width:
+            break
+
+        next_width = max(minimum_width, int(working_image.width * 0.8))
+        next_height = max(
+            1,
+            int(working_image.height * (next_width / working_image.width)),
+        )
+        working_image = working_image.resize(
+            (next_width, next_height),
+            lanczos,
+        )
+
+    raise ValueError(
+        'La fotografía no pudo optimizarse al tamaño requerido para el reporte.'
+    )
 
 
 @reporte_bp.route('/reporte/seleccionar/<int:ot_id>')
@@ -870,7 +950,7 @@ def generar_reporte_pdf():
                 try:
                     if image_id in client_images:
                         image = _open_validated_image(client_images[image_id])
-                        encoded = _prepare_report_image(
+                        encoded, encoded_size = _prepare_report_image(
                             image,
                             already_cropped=True,
                         )
@@ -886,13 +966,14 @@ def generar_reporte_pdf():
                             image_id,
                         )
                         image = _open_validated_image(image_bytes)
-                        encoded = _prepare_report_image(image)
+                        encoded, encoded_size = _prepare_report_image(image)
                         image.close()
 
                     return {
                         'ok': True,
                         'process_name': process_name,
                         'image_id': image_id,
+                        'encoded_size': encoded_size,
                         'image': {
                             'url': f'data:image/jpeg;base64,{encoded}',
                             'rotate': False,
@@ -923,6 +1004,25 @@ def generar_reporte_pdf():
                 f'No se pudieron procesar {len(failed_results)} imágenes. '
                 'Revisa que sigan disponibles y dentro de los límites.',
                 422,
+            )
+
+        rendered_image_bytes = sum(
+            result['encoded_size'] for result in results
+        )
+        if rendered_image_bytes > MAX_REPORT_RENDERED_TOTAL_BYTES:
+            current_app.logger.warning(
+                'report_rendered_payload_too_large',
+                extra={
+                    'ot_id': ot_id,
+                    'image_count': len(results),
+                    'rendered_image_bytes': rendered_image_bytes,
+                    'rendered_limit_bytes': MAX_REPORT_RENDERED_TOTAL_BYTES,
+                },
+            )
+            return (
+                'Las fotografías optimizadas todavía superan el tamaño seguro '
+                'del reporte. Selecciona menos fotografías e inténtalo de nuevo.',
+                413,
             )
 
         processes_map = {}
@@ -956,6 +1056,7 @@ def generar_reporte_pdf():
                 'user_id': current_user.get_id(),
                 'image_count': len(selected_images),
                 'local_image_count': len(local_images),
+                'rendered_image_bytes': rendered_image_bytes,
             },
         )
 

@@ -39,6 +39,44 @@
         if (node) node.textContent = String(value);
     }
 
+    function responseStatusMessage(status, fallback) {
+        const messages = {
+            401: 'Tu sesión venció. Inicia sesión nuevamente y vuelve a intentarlo.',
+            403: 'No tienes permiso para realizar esta operación.',
+            404: 'No se encontró la información solicitada.',
+            413: 'El archivo supera el tamaño permitido por el servidor.',
+            429: 'Se realizaron demasiadas solicitudes. Espera un momento.',
+            500: 'El servidor no pudo completar la operación.',
+            502: 'Google Drive no respondió correctamente.',
+            503: 'El servicio no está disponible en este momento.',
+            504: 'La operación tardó demasiado y fue interrumpida.',
+        };
+        return messages[status] || fallback;
+    }
+
+    async function readApiJson(response, fallback) {
+        const rawBody = await response.text();
+        let payload = null;
+        if (rawBody.trim()) {
+            try {
+                payload = JSON.parse(rawBody);
+            } catch (_) {
+                payload = null;
+            }
+        }
+
+        if (!response.ok) {
+            const serverMessage = payload && typeof payload.error === 'string'
+                ? payload.error.trim()
+                : '';
+            throw new Error(serverMessage || responseStatusMessage(response.status, fallback));
+        }
+        if (!payload || typeof payload !== 'object') {
+            throw new Error(responseStatusMessage(response.status, fallback));
+        }
+        return payload;
+    }
+
     function replaceCategory(urlTemplate, category) {
         return String(urlTemplate || '').replace('__CATEGORY__', category);
     }
@@ -227,14 +265,7 @@
             ),
         );
 
-        const openIndicator = createElement(
-            'span',
-            'tracking-document-open-indicator material-symbols-rounded',
-            documentData.previewable ? 'open_in_new' : 'download',
-        );
-        openIndicator.setAttribute('aria-hidden', 'true');
-
-        card.append(badge, copy, openIndicator);
+        card.append(badge, copy);
         card.addEventListener('click', () => openDocument(documentData));
         container.append(card);
     }
@@ -255,11 +286,18 @@
             const response = await fetch(config.documentsListUrl, {
                 cache: 'no-store',
                 credentials: 'same-origin',
-                headers: { Accept: 'application/json' },
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
             });
-            const payload = await response.json();
+            const payload = await readApiJson(
+                response,
+                'No se pudieron cargar los documentos publicados.',
+            );
             if (response.ok && payload.success) applyDocuments(payload.documents);
-        } catch (_) {
+        } catch (error) {
+            console.warn('No se pudieron cargar los documentos:', error.message);
         }
     }
 
@@ -409,10 +447,16 @@
                 {
                     cache: 'no-store',
                     credentials: 'same-origin',
-                    headers: { Accept: 'application/json' },
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
                 },
             );
-            const payload = await response.json();
+            const payload = await readApiJson(
+                response,
+                'No se pudieron consultar los archivos.',
+            );
             if (!response.ok || !payload.success) {
                 throw new Error(payload.error || 'No se pudieron consultar los archivos.');
             }
@@ -454,11 +498,15 @@
                         Accept: 'application/json',
                         'Content-Type': 'application/json',
                         'X-CSRFToken': config.csrfToken || '',
+                        'X-Requested-With': 'XMLHttpRequest',
                     },
                     body: JSON.stringify({ file_id: fileId || null }),
                 },
             );
-            const payload = await response.json();
+            const payload = await readApiJson(
+                response,
+                'No se pudo guardar la selección.',
+            );
             if (!response.ok || !payload.success) {
                 throw new Error(payload.error || 'No se pudo guardar la selección.');
             }

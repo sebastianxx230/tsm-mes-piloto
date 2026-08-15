@@ -6,17 +6,24 @@ from werkzeug.security import check_password_hash
 
 
 def test_report_routes_require_authentication(client, ids):
-    routes = [
+    page_routes = [
         ('get', f"/reporte/seleccionar/{ids['ot']}"),
-        ('get', f"/reporte/api/fotos/{ids['ot']}"),
-        ('get', f"/reporte/api/fotos/{ids['ot']}/conteo"),
         ('post', '/reporte/generar'),
     ]
 
-    for method, route in routes:
+    for method, route in page_routes:
         response = getattr(client, method)(route)
         assert response.status_code == 302
         assert response.headers['Location'].startswith('/?next=')
+
+    for route in (
+        f"/reporte/api/fotos/{ids['ot']}",
+        f"/reporte/api/fotos/{ids['ot']}/conteo",
+    ):
+        response = client.get(route, headers={'Accept': 'application/json'})
+        assert response.status_code == 401
+        assert response.is_json
+        assert response.get_json()['code'] == 'authentication_required'
 
 
 def test_viewer_cannot_modify_production_or_generate_reports(client, login, ids):
@@ -240,6 +247,38 @@ def test_tracking_view_summarizes_progress_personnel_and_log(app, client, login,
         'lot': 'PL DE PRUEBA',
         'processes': 'Armado, Habilitado',
     }]
+
+
+def test_saved_production_personnel_is_returned_by_tracking(client, login, ids):
+    login('editor')
+
+    first_save = client.post(
+        '/api/produccion/actualizar_celda',
+        json={
+            'id': ids['component'],
+            'campo': 'operario',
+            'valor': 'hab:Ana Operaria',
+            'expected_version': 1,
+        },
+    )
+    assert first_save.status_code == 200
+
+    second_save = client.post(
+        '/api/produccion/actualizar_celda',
+        json={
+            'id': ids['component'],
+            'campo': 'operario',
+            'valor': 'hab:Ana Operaria|arm:Ana Operaria',
+            'expected_version': first_save.get_json()['version'],
+        },
+    )
+    assert second_save.status_code == 200
+
+    tracking = client.get(f"/api/seguimiento/{ids['ot']}")
+    assert tracking.status_code == 200
+    personnel = tracking.get_json()['personnel']
+    assert [person['name'] for person in personnel] == ['Ana Operaria']
+    assert personnel[0]['processes'] == 'Armado, Habilitado'
 
 
 def test_messages_and_audit_history_are_returned_separately(app, client, login, ids):

@@ -17,6 +17,68 @@ window.addEventListener('DOMContentLoaded', () => {
 
 const IS_2026 = window.ReporteConfig.is2026;
 const CAN_GENERATE = window.ReporteConfig.canGenerate;
+const REPORT_REQUEST_TIMEOUT_MS = 240000;
+
+function responseStatusMessage(status, fallback) {
+    const messages = {
+        400: 'La solicitud del reporte no es válida.',
+        401: 'Tu sesión venció. Inicia sesión nuevamente y repite la operación.',
+        403: 'No tienes permiso para realizar esta operación.',
+        404: 'No se encontró la OT o su carpeta de fotografías.',
+        413: 'El reporte supera el tamaño permitido. Selecciona menos fotografías.',
+        422: 'Una o más fotografías no pudieron procesarse.',
+        429: 'Se alcanzó el límite de reportes. Espera un minuto e inténtalo nuevamente.',
+        502: 'Google Drive o el servidor no respondió correctamente.',
+        503: 'El servicio de fotografías no está disponible en este momento.',
+        504: 'La generación tardó demasiado y fue interrumpida.',
+    };
+    return messages[status] || fallback;
+}
+
+async function readApiJson(response, fallback) {
+    const rawBody = await response.text();
+    let payload = null;
+
+    if (rawBody.trim()) {
+        try {
+            payload = JSON.parse(rawBody);
+        } catch (_) {
+            payload = null;
+        }
+    }
+
+    if (!response.ok) {
+        const serverMessage = payload && typeof payload.error === 'string'
+            ? payload.error.trim()
+            : '';
+        throw new Error(serverMessage || responseStatusMessage(response.status, fallback));
+    }
+    if (!payload || typeof payload !== 'object') {
+        throw new Error(responseStatusMessage(response.status, fallback));
+    }
+    return payload;
+}
+
+async function readReportHtml(response) {
+    const rawBody = await response.text();
+    if (!response.ok) {
+        let serverMessage = '';
+        try {
+            const payload = JSON.parse(rawBody);
+            serverMessage = typeof payload.error === 'string' ? payload.error.trim() : '';
+        } catch (_) {
+            if (!/^\s*</.test(rawBody)) serverMessage = rawBody.trim();
+        }
+        throw new Error(
+            serverMessage
+            || responseStatusMessage(response.status, 'No se pudo generar el reporte.'),
+        );
+    }
+    if (!rawBody.trim() || !/<html[\s>]/i.test(rawBody)) {
+        throw new Error('El servidor devolvió un reporte incompleto. Inténtalo nuevamente.');
+    }
+    return rawBody;
+}
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>'"]/g, character => ({
@@ -171,19 +233,42 @@ function saveCrop() {
 function closeCropper() { if(currentCropper) { currentCropper.destroy(); currentCropper = null; } document.getElementById('crop-modal').classList.add('hidden'); }
 
 async function comprimirImagen(file) {
-    return new Promise((resolve) => {
-        const reader = new FileReader(); reader.readAsDataURL(file);
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('No se pudo leer la fotografía seleccionada.'));
         reader.onload = event => {
-            const img = new Image(); img.src = event.target.result;
+            const img = new Image();
+            img.onerror = () => reject(new Error('El archivo seleccionado no contiene una imagen válida.'));
             img.onload = () => {
                 const canvas = document.createElement('canvas'); const MAX_WIDTH = 600; const MAX_HEIGHT = 450;
                 let width = img.width; let height = img.height;
                 if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } }
                 else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
-                canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
-                canvas.toBlob((blob) => { resolve(blob); }, 'image/jpeg', 0.4);
+                canvas.width = Math.max(1, Math.round(width));
+                canvas.height = Math.max(1, Math.round(height));
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    reject(new Error('El navegador no pudo preparar la fotografía.'));
+                    return;
+                }
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob((blob) => {
+                    if (blob) resolve(blob);
+                    else reject(new Error('No se pudo optimizar la fotografía.'));
+                }, 'image/jpeg', 0.55);
             };
+            img.src = event.target.result;
         };
+        reader.readAsDataURL(file);
+    });
+}
+
+function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('No se pudo preparar la fotografía optimizada.'));
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
     });
 }
 
@@ -192,14 +277,17 @@ async function subirLocal(event) {
     const files = event.target.files; if (!files.length) return;
     mostrarAlerta('Optimizando imágenes...', 'info');
 
-    for(let i=0; i<files.length; i++) {
-        const blobComprimido = await comprimirImagen(files[i]);
-        const reader = new FileReader();
-
-        reader.onload = (e) => {
+    try {
+        for(let i=0; i<files.length; i++) {
+            const file = files[i];
+            if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+                throw new Error(`“${file.name}” no es una imagen JPG, PNG o WebP válida.`);
+            }
+            const blobComprimido = await comprimirImagen(file);
+            const dataUrl = await blobToDataUrl(blobComprimido);
             const localId = 'local_' + Date.now() + Math.floor(Math.random() * 1000);
-            localImagesBase64[localId] = e.target.result;
-            const div = createPhotoCard(localId, e.target.result, IS_2026);
+            localImagesBase64[localId] = dataUrl;
+            const div = createPhotoCard(localId, dataUrl, IS_2026);
 
             if (IS_2026) {
                 div.addEventListener('click', () => toggleSelect2026(localId));
@@ -209,17 +297,27 @@ async function subirLocal(event) {
                 div.addEventListener('click', () => toggleSelect2025(div));
                 document.getElementById('local-gallery-2025').classList.remove('hidden'); document.getElementById('local-gallery-grid-2025').insertBefore(div, document.getElementById('local-gallery-grid-2025').firstChild);
             }
-        };
-        reader.readAsDataURL(blobComprimido);
+        }
+        mostrarAlerta('Imágenes listas.', 'exito');
+    } catch (error) {
+        mostrarAlerta(error.message || 'No se pudieron procesar las imágenes.', 'error');
+    } finally {
+        event.target.value = '';
     }
-    event.target.value = ''; setTimeout(() => mostrarAlerta('Imágenes listas.', 'exito'), 400);
 }
 
 async function sincronizarDrive() {
     if(!IS_2026) { mostrarAlerta('Sincronizando carpetas con Drive...', 'info'); setTimeout(() => window.location.reload(), 1000); return; }
     const icon = document.getElementById('sync-icon'); icon.classList.add('animate-spin');
     try {
-        const res = await fetch('/reporte/api/fotos/' + window.ReporteConfig.otItem); const data = await res.json();
+        const res = await fetch('/reporte/api/fotos/' + window.ReporteConfig.otItem, {
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+        const data = await readApiJson(res, 'No se pudo sincronizar Google Drive.');
         if(data.success) {
             const gallery = document.getElementById('gallery-container'); const emptyState = document.getElementById('empty-state'); let nuevas = 0;
             data.fotos.forEach(img => {
@@ -237,7 +335,7 @@ async function sincronizarDrive() {
             if(nuevas > 0) mostrarAlerta(`Sincronización completa. ${nuevas} fotos nuevas.`, 'exito'); else mostrarAlerta('La galería ya está actualizada con Drive.', 'info');
             updateUI2026();
         } else { mostrarAlerta('Error conectando a Drive.', 'error'); }
-    } catch(e) { mostrarAlerta('Error de red al sincronizar.', 'error'); } finally { icon.classList.remove('animate-spin'); }
+    } catch(e) { mostrarAlerta(e.message || 'Error de red al sincronizar.', 'error'); } finally { icon.classList.remove('animate-spin'); }
 }
 
 function editFecha() { if (!CAN_GENERATE) return; document.getElementById('fecha-display').classList.add('hidden'); const input = document.getElementById('fecha-input'); input.classList.remove('hidden'); input.focus(); input.select(); }
@@ -381,6 +479,11 @@ function abrirReporte(e) {
     }
 
     const pdfWindow = window.open('', '_blank');
+    if (!pdfWindow) {
+        if (btnGenerar) btnGenerar.classList.remove('pointer-events-none', 'opacity-50');
+        mostrarAlerta('El navegador bloqueó la ventana del reporte. Habilita las ventanas emergentes.', 'error');
+        return;
+    }
     pdfWindow.document.open();
     pdfWindow.document.write(`
     <!DOCTYPE html>
@@ -419,7 +522,7 @@ function abrirReporte(e) {
             .step-status { text-align: right; min-width: 90px; }
             .status-text { font-size: 0.8rem; font-weight: 700; margin-bottom: 3px; }
             .status-time { font-size: 0.75rem; color: #94a3b8; font-weight: 500; font-variant-numeric: tabular-nums; }
-            .text-done { color: #16a34a; } .text-active { color: #2563eb; } .text-pending { color: #94a3b8; }
+            .text-done { color: #16a34a; } .text-active { color: #2563eb; } .text-pending { color: #94a3b8; } .text-error { color: #dc2626; }
             .icon-done svg { width: 22px; height: 22px; color: #16a34a; background: white; border: 2px solid #16a34a; border-radius: 50%; padding: 3px; }
             .icon-active { width: 20px; height: 20px; border-radius: 50%; border: 2.5px solid #e2e8f0; border-top-color: #2563eb; background: white; animation: spin 1s linear infinite; }
             .icon-pending { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #cbd5e1; background: white; }
@@ -560,6 +663,11 @@ function abrirReporte(e) {
                     statusText.innerText = 'En progreso';
                     statusText.className = 'status-text text-active';
                     statusTime.innerText = getTime();
+                } else if (state === 'error') {
+                    iconContainer.innerHTML = '<span style="display:grid;width:22px;height:22px;place-items:center;border:2px solid #dc2626;border-radius:50%;color:#dc2626;font-weight:900;background:white">!</span>';
+                    statusText.innerText = 'Error';
+                    statusText.className = 'status-text text-error';
+                    statusTime.innerText = getTime();
                 } else {
                     iconContainer.innerHTML = '<div class="icon-pending"></div>';
                     statusText.innerText = 'Pendiente';
@@ -618,6 +726,10 @@ function abrirReporte(e) {
                     }, 800);
                 } else if (event.data.type === 'ERROR') {
                     isFinished = true;
+                    setStepState(currentStep, 'error');
+                    bar.style.backgroundColor = '#dc2626';
+                    pct.innerText = 'Error';
+                    document.querySelector('.header-text h2').innerText = 'No se pudo generar el PDF';
                     const msgContainer = document.querySelector('.card-footer span');
                     msgContainer.innerText = "Error: " + event.data.message;
                     msgContainer.style.color = "#ef4444";
@@ -653,22 +765,39 @@ function abrirReporte(e) {
         });
     }
 
+    const reportController = new AbortController();
+    const reportTimeout = window.setTimeout(
+        () => reportController.abort(),
+        REPORT_REQUEST_TIMEOUT_MS,
+    );
+
     fetch(window.ReporteConfig.urlGenerarPdf, {
         method: 'POST',
-        body: formData
+        body: formData,
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'text/html, application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        signal: reportController.signal,
     })
-        .then(response => {
-            if (!response.ok) throw new Error('Error al procesar las imágenes.');
-            return response.text();
-        })
+        .then(readReportHtml)
         .then(htmlStr => {
-            pdfWindow.postMessage({ type: 'DONE', html: htmlStr }, window.location.origin);
+            if (!pdfWindow.closed) {
+                pdfWindow.postMessage({ type: 'DONE', html: htmlStr }, window.location.origin);
+            }
         })
         .catch(error => {
-            pdfWindow.postMessage({ type: 'ERROR', message: error.message }, window.location.origin);
-            mostrarAlerta("Error al generar el reporte", "error");
+            const message = error.name === 'AbortError'
+                ? 'La generación superó los 4 minutos. Reduce la cantidad de fotografías e inténtalo nuevamente.'
+                : (error.message || 'No se pudo generar el reporte.');
+            if (!pdfWindow.closed) {
+                pdfWindow.postMessage({ type: 'ERROR', message }, window.location.origin);
+            }
+            mostrarAlerta(message, 'error');
         })
         .finally(() => {
+            window.clearTimeout(reportTimeout);
             if (btnGenerar) {
                 btnGenerar.classList.remove('pointer-events-none', 'opacity-50');
             }

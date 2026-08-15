@@ -8,5 +8,6 @@ services:
       - .env.container
     ports:
       - "8000:8000"
+    init: true
     restart: unless-stopped
-    stop_grace_period: 30s
+    stop_grace_period: 70s

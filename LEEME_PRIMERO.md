@@ -33,8 +33,9 @@ subcarpetas `docs/` y `migrations/versions/`.
 3. Si devuelve `20260804_0008`, siga `docs/NEON_PILOT_MIGRATION.md` primero en
    una rama `pilot-preview`. Si devuelve otra revisión, deténgase y revísela
    antes de aplicar cambios.
-4. Use `docs/FINAL_PILOT_CONFIGURATION.md` para completar Vercel y luego probar
-   Docker cuando Windows tenga WSL 2 y Docker Desktop.
+4. Use `docs/RENDER_DEPLOYMENT.md` para probar Docker, desplegar primero contra
+   `pilot-preview` y realizar el corte controlado a producción.
 
-No coloque `MIGRATIONS_DATABASE_URL` en Vercel: esa conexión de propietario se
-usa únicamente de forma local y temporal para las migraciones.
+No coloque `MIGRATIONS_DATABASE_URL` en Vercel ni Render: esa conexión de
+propietario se usa únicamente desde un equipo controlado para migraciones y
+backups.

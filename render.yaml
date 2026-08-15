@@ -1,8 +1,106 @@
+# Render Blueprint for the paid, always-on MES pilot.
+# IMPORTANT: before creating the service, match `region` to the Neon project:
+# Neon aws-us-east-1 -> Render virginia; aws-us-east-2 -> ohio; aws-us-west-2 -> oregon.
+previews:
+  generation: off
+
 services:
   - type: web
-    name: tsm25
-    env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 app:app
-    healthCheckPath: /health
+    name: tsm-mes-piloto
+    runtime: docker
+    plan: starter
+    region: virginia
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    numInstances: 1
+    healthCheckPath: /health/live
+    maxShutdownDelaySeconds: 60
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: FLASK_DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: CHECK_DATABASE_ON_STARTUP
+        value: "True"
+      - key: SESSION_COOKIE_SECURE
+        value: "True"
+      - key: SESSION_LIFETIME_HOURS
+        value: "10"
+      - key: WTF_CSRF_SSL_STRICT
+        value: "True"
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: MAX_CONTENT_MB
+        value: "50"
+      - key: DB_POOL_SIZE
+        value: "3"
+      - key: DB_MAX_OVERFLOW
+        value: "2"
+      # memory:// is correct only while numInstances remains 1.
+      - key: RATELIMIT_STORAGE_URI
+        value: memory://
+      - key: LOGIN_RATE_LIMIT
+        value: 5 per minute
+      - key: REPORT_RATE_LIMIT
+        value: 3 per minute
+      - key: REQUIRE_IMPORT_VERSION
+        value: "True"
+      - key: REQUIRE_COMPONENT_VERSION
+        value: "True"
+      - key: GOOGLE_CREDENTIALS
+        sync: false
+      - key: DRIVE_PARENT_FOLDER_ID
+        sync: false
+      - key: DRIVE_PARENT_FOLDER_ID_2025
+        sync: false
+      - key: DRIVE_PARENT_FOLDER_ID_2026
+        sync: false
+      - key: MAX_IMPORT_COMPONENTS
+        value: "5000"
+      - key: MAX_MESSAGE_LENGTH
+        value: "2000"
+      - key: MAX_TRACKING_PHOTOS
+        value: "12"
+      - key: MAX_TRACKING_DOCUMENT_BYTES
+        value: "52428800"
+      - key: MAX_REPORT_IMAGES
+        value: "30"
+      - key: MAX_REPORT_LOCAL_IMAGES
+        value: "4"
+      - key: MAX_REPORT_IMAGE_BYTES
+        value: "6291456"
+      - key: MAX_REPORT_TOTAL_BYTES
+        value: "33554432"
+      - key: MAX_REPORT_LOCAL_TOTAL_BYTES
+        value: "8388608"
+      - key: MAX_REPORT_IMAGE_PIXELS
+        value: "25000000"
+      - key: MAX_REPORT_TEXT_LENGTH
+        value: "500"
+      - key: REPORT_WORKERS
+        value: "2"
+      - key: ALLOW_PARTIAL_DRIVE_FOLDER_MATCH
+        value: "False"
+      - key: PHOTO_COUNT_CACHE_TTL
+        value: "300"
+      - key: PHOTO_COUNT_CACHE_MAX_ITEMS
+        value: "500"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: WEB_THREADS
+        value: "4"
+      - key: GUNICORN_TIMEOUT
+        value: "120"
+      - key: GUNICORN_GRACEFUL_TIMEOUT
+        value: "60"
+      - key: GUNICORN_MAX_REQUESTS
+        value: "1000"
+      - key: GUNICORN_MAX_REQUESTS_JITTER
+        value: "100"

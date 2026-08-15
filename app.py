@@ -90,6 +90,15 @@ def _classify_database_error(error):
 
     return 'connection_failed'
 
+
+def _env_flag(name, default=False):
+    """Parse a boolean environment flag and fail closed on unknown values."""
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 app = Flask(
     __name__,
     template_folder='templates',
@@ -177,6 +186,27 @@ login_manager.login_view = 'login_bp.login'
 login_manager.login_message = "Por favor, inicia sesión para acceder a TSM."
 login_manager.login_message_category = "error"
 
+
+def _expects_json_response():
+    return (
+        request.path.startswith('/api/')
+        or request.path.startswith('/reporte/api/')
+        or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or request.accept_mimetypes.best == 'application/json'
+    )
+
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    message = 'Tu sesión venció. Inicia sesión nuevamente y repite la operación.'
+    if _expects_json_response():
+        return jsonify({
+            'success': False,
+            'error': message,
+            'code': 'authentication_required',
+        }), 401
+    return redirect(url_for('login_bp.login', next=request.url))
+
 # --- AÑADIDO: Importamos los modelos DESPUÉS de inicializar la app ---
 from models.usuario import Usuario
 from models.catalogo_ot import CatalogoOT
@@ -204,7 +234,41 @@ app.register_blueprint(produccion_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(documentos_seguimiento_bp)
 
+
+def _database_unavailable_reason():
+    """Return None when PostgreSQL is reachable, otherwise a safe reason code."""
+    try:
+        db.session.execute(text('SELECT 1'))
+    except Exception as error:
+        reason = _classify_database_error(error)
+        db.session.rollback()
+        app.logger.error(
+            'database_connectivity_failed reason=%s exception_type=%s',
+            reason,
+            type(error).__name__,
+        )
+        return reason
+    return None
+
+
+if is_production and _env_flag('CHECK_DATABASE_ON_STARTUP'):
+    with app.app_context():
+        startup_database_error = _database_unavailable_reason()
+        if startup_database_error:
+            raise RuntimeError(
+                f'PostgreSQL no esta disponible al iniciar ({startup_database_error}).'
+            ) from None
+
+
+@app.get('/health/live')
+@limiter.exempt
+def health_live():
+    """Liveness probe that does not keep a scale-to-zero database awake."""
+    return jsonify({'status': 'ok', 'service': 'tsm-mes'})
+
+
 @app.get('/health')
+@app.get('/health/ready')
 @limiter.exempt
 def health():
     """Comprueba que la aplicación y PostgreSQL están disponibles."""
@@ -230,7 +294,7 @@ def health():
 @app.errorhandler(429)
 def ratelimit_exceeded(_error):
     message = 'Demasiados intentos. Espera un momento antes de volver a intentarlo.'
-    if request.path.startswith('/api/') or request.accept_mimetypes.best == 'application/json':
+    if _expects_json_response():
         return jsonify({'success': False, 'error': message}), 429
     return message, 429
 
@@ -239,7 +303,7 @@ def ratelimit_exceeded(_error):
 def csrf_error(error):
     message = 'Tu sesión de seguridad venció. Actualiza la página e inténtalo nuevamente.'
     app.logger.warning('csrf_validation_failed', extra={'reason': error.description})
-    if request.path.startswith('/api/') or request.accept_mimetypes.best == 'application/json':
+    if _expects_json_response():
         return jsonify({'success': False, 'error': message, 'code': 'csrf_expired'}), 400
     return message, 400
 

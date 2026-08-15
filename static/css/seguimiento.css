@@ -3664,6 +3664,138 @@ body.tracking-overlay-open {
     }
 }
 
+/* Workspace 6.7: una sola composición centrada para los cinco apartados. */
+.tracking-workspace-panel {
+    text-align: center;
+}
+
+.tracking-workspace-heading,
+.tracking-personnel-toolbar,
+.tracking-photos-heading {
+    min-height: 126px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 13px;
+    padding: 22px 20px;
+    text-align: center;
+}
+
+.tracking-workspace-heading > div {
+    width: min(680px, 100%);
+    margin-inline: auto;
+}
+
+.tracking-heading-counter,
+.tracking-search,
+.tracking-manage-photos {
+    margin-inline: auto;
+}
+
+.tracking-search {
+    width: min(430px, 100%);
+    padding-inline: 13px;
+}
+
+.tracking-search input {
+    text-align: center;
+}
+
+.tracking-lot-list,
+.tracking-person-grid,
+.tracking-photo-gallery {
+    width: min(1040px, 100%);
+    min-height: 260px;
+    align-content: center;
+    justify-content: center;
+    margin-inline: auto;
+    padding: 20px;
+    background: #f8fafc;
+}
+
+.tracking-lot-list,
+.tracking-person-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+    gap: 12px;
+}
+
+.tracking-lot {
+    min-height: 126px;
+    align-items: center;
+    padding: 18px;
+}
+
+.tracking-lot-top {
+    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+}
+
+.tracking-lot-name,
+.tracking-lot-name > div {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+}
+
+.tracking-lot-foot {
+    text-align: center;
+}
+
+.tracking-person {
+    min-height: 126px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid #dce5ef;
+    border-radius: 8px;
+}
+
+.tracking-person-main,
+.tracking-person-body {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+}
+
+.tracking-photo-gallery {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 230px));
+    gap: 14px;
+}
+
+.tracking-empty,
+.tracking-empty-personnel,
+.tracking-photo-empty {
+    width: 100%;
+    min-height: 220px;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+@media (max-width: 640px) {
+    .tracking-workspace-heading,
+    .tracking-personnel-toolbar,
+    .tracking-photos-heading {
+        min-height: 116px;
+        padding: 18px 14px;
+    }
+
+    .tracking-lot-list,
+    .tracking-person-grid,
+    .tracking-photo-gallery {
+        min-height: 220px;
+        padding: 14px;
+    }
+
+    .tracking-photo-gallery {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* Actividad compacta y coherente con la mensajeria de Produccion. */
 .tracking-page {
     max-width: 1500px;
