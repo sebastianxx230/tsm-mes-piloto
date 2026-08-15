@@ -46,7 +46,7 @@ jobs:
       - run: pytest -q
       - run: pip-audit --cache-dir .pip-audit-cache -r requirements.txt
       - name: Detect committed secrets
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
