@@ -3,11 +3,14 @@ import os
 import re
 import traceback
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
+from googleapiclient.errors import HttpError
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from werkzeug.utils import secure_filename
 from utils.auth import roles_required
 from db_config import db
 from models.catalogo_ot import CatalogoOT
@@ -26,7 +29,21 @@ LIMA_TIMEZONE = timezone(timedelta(hours=-5), name='America/Lima')
 ALLOWED_OT_STATES = {'En Proceso', 'No Empezado', 'Terminado'}
 OT_CODE_PATTERN = re.compile(r'^[A-Z0-9][A-Z0-9._/-]{2,49}$')
 MAX_TRACKING_PHOTOS = max(1, int(os.environ.get('MAX_TRACKING_PHOTOS', '12')))
+MAX_TRACKING_PHOTO_UPLOAD_BYTES = max(
+    512 * 1024,
+    int(os.environ.get(
+        'MAX_TRACKING_PHOTO_UPLOAD_BYTES',
+        str(3 * 1024 * 1024),
+    )),
+)
 DRIVE_IMAGE_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,150}$')
+ALLOWED_TRACKING_PHOTO_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+TRACKING_PHOTO_MIME_TYPES = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+}
 
 
 def _validation_error(message, status=400):
@@ -369,6 +386,121 @@ def _tracking_photo_dict(photo):
         photo_id=photo.id,
     )
     return data
+
+
+def _read_tracking_photo_upload(file_storage):
+    original_name = Path(str(file_storage.filename or '')).name.strip()
+    extension = Path(original_name).suffix.lower()
+    if not original_name or extension not in ALLOWED_TRACKING_PHOTO_EXTENSIONS:
+        raise ValueError('Sube una fotografía JPG, PNG o WEBP.')
+
+    safe_name = secure_filename(original_name)
+    if not safe_name:
+        raise ValueError('El nombre de la fotografía no es válido.')
+
+    content = file_storage.stream.read(MAX_TRACKING_PHOTO_UPLOAD_BYTES + 1)
+    if not content:
+        raise ValueError('La fotografía está vacía.')
+    if len(content) > MAX_TRACKING_PHOTO_UPLOAD_BYTES:
+        raise OverflowError(
+            f'La fotografía supera el límite de '
+            f'{MAX_TRACKING_PHOTO_UPLOAD_BYTES // (1024 * 1024)} MB.'
+        )
+    return safe_name, TRACKING_PHOTO_MIME_TYPES[extension], content
+
+
+@gestion_ot_bp.post('/api/seguimiento/<int:id>/fotos/subir')
+@login_required
+@roles_required('admin')
+def subir_foto_seguimiento(id):
+    ot = db.session.get(CatalogoOT, id)
+    if ot is None or ot.archivado:
+        return _validation_error('La OT no existe.', 404)
+
+    file_storage = request.files.get('file')
+    if file_storage is None:
+        return _validation_error('Selecciona una fotografía para subir.')
+
+    try:
+        filename, mime_type, content = _read_tracking_photo_upload(file_storage)
+    except OverflowError as error:
+        return _validation_error(str(error), 413)
+    except ValueError as error:
+        return _validation_error(str(error))
+
+    from controllers.reporte_fotografico_controller import (
+        DRIVE_PHOTOS_FOLDER_NAME,
+        ensure_ot_category_folder,
+        get_drive_service,
+        invalidate_photo_count_cache,
+        upload_drive_file,
+    )
+
+    service = get_drive_service()
+    if service is None:
+        return _validation_error('No fue posible conectar con Google Drive.', 503)
+
+    try:
+        folder = ensure_ot_category_folder(
+            service,
+            str(ot.ot).strip(),
+            DRIVE_PHOTOS_FOLDER_NAME,
+        )
+        uploaded = upload_drive_file(
+            service,
+            folder['category_folder_id'],
+            filename,
+            mime_type,
+            content,
+        )
+        invalidate_photo_count_cache(id)
+
+        try:
+            db.session.add(BitacoraOT(
+                ot_id=id,
+                usuario_id=current_user.id,
+                usuario_nombre=getattr(current_user, 'nombre', 'Administrador'),
+                mensaje=f'Subió {filename} a FOTOGRAFIAS en Google Drive.',
+                tipo='audit',
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                'tracking_photo_upload_audit_failed',
+                extra={'ot_id': id},
+            )
+
+        return jsonify({
+            'success': True,
+            'photo': {
+                'id': uploaded['id'],
+                'nombre': uploaded.get('name') or filename,
+            },
+        }), 201
+    except HttpError as error:
+        status = int(getattr(getattr(error, 'resp', None), 'status', 0) or 0)
+        current_app.logger.warning(
+            'tracking_photo_drive_upload_rejected',
+            extra={'ot_id': id, 'status': status},
+        )
+        if status in {401, 403}:
+            return _validation_error(
+                'La cuenta de servicio necesita permiso de Editor en la carpeta de Drive.',
+                403,
+            )
+        return _validation_error('Google Drive rechazó la fotografía.', 502)
+    except ValueError as error:
+        return _validation_error(str(error), 400)
+    except Exception:
+        current_app.logger.exception(
+            'tracking_photo_upload_failed',
+            extra={'ot_id': id},
+        )
+        return _validation_error(
+            'No fue posible subir la fotografía a Google Drive.',
+            502,
+        )
 
 
 @gestion_ot_bp.put('/api/seguimiento/<int:id>/fotos')

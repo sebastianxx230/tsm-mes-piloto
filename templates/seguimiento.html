@@ -5,8 +5,8 @@
 
 {% block head_extra %}
 <meta name="referrer" content="no-referrer">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=2.1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.3.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=2.2.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.4.0">
 {% endblock %}
 
 {% block content %}
@@ -38,7 +38,7 @@
             </a>
             <button type="button" class="tracking-action tracking-action-activity" data-open-activity>
                 <span class="material-symbols-rounded" aria-hidden="true">forum</span>
-                <span>Mensajes y actividad</span>
+                <span>Actividad</span>
             </button>
             {% if current_user.rol in ['admin', 'editor'] %}
             <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="tracking-action tracking-action-primary">
@@ -344,13 +344,12 @@
     </section>
 
     <div class="tracking-activity-backdrop" id="tracking-activity-backdrop" hidden>
-        <aside class="tracking-activity-drawer" id="tracking-activity-drawer" role="dialog" aria-modal="true" aria-labelledby="tracking-activity-title" tabindex="-1">
+        <aside class="tracking-activity-drawer" id="tracking-activity-drawer" role="dialog" aria-modal="true" aria-label="Mensajes e historial de la OT {{ ot.ot }}" tabindex="-1">
             <header class="tracking-drawer-header">
                 <div class="tracking-drawer-title">
                     <div>
-                        <h2 id="tracking-activity-title">Mensajes e historial</h2>
+                        <h2 id="tracking-activity-title">OT {{ ot.ot }}</h2>
                         <div class="tracking-drawer-subline">
-                            <span>OT {{ ot.ot }}</span>
                             <span class="tracking-readonly-status" aria-label="Vista de solo lectura">Solo lectura</span>
                         </div>
                     </div>
@@ -464,11 +463,17 @@
                 <div>
                     <p class="tracking-section-kicker">Evidencia visible</p>
                     <h2 id="tracking-photo-manager-title">Seleccionar fotografías</h2>
-                    <span>Elige hasta {{ max_tracking_photos }} imágenes de Drive para mostrarlas en Seguimiento.</span>
+                    <span>Sube imágenes a FOTOGRAFIAS o elige hasta {{ max_tracking_photos }} para publicarlas.</span>
                 </div>
-                <button type="button" class="tracking-icon-button" data-close-photo-manager aria-label="Cerrar selección de fotografías">
-                    <span class="material-symbols-rounded" aria-hidden="true">close</span>
-                </button>
+                <div class="tracking-photo-manager-header-actions">
+                    <label class="tracking-drive-upload" for="tracking-photo-upload">
+                        <input id="tracking-photo-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+                        <span>Subir fotografías</span>
+                    </label>
+                    <button type="button" class="tracking-icon-button" data-close-photo-manager aria-label="Cerrar selección de fotografías">
+                        <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                    </button>
+                </div>
             </header>
             <div class="tracking-photo-manager-body">
                 <div class="tracking-photo-manager-state" id="tracking-photo-manager-state">Consultando fotografías de la OT…</div>
@@ -499,7 +504,13 @@
                 <label class="tracking-document-search" for="tracking-document-search">
                     <input id="tracking-document-search" type="search" placeholder="Buscar archivo" autocomplete="off">
                 </label>
-                <span id="tracking-document-result-count">0 de 0</span>
+                <div class="tracking-document-toolbar-actions">
+                    <label class="tracking-drive-upload" for="tracking-document-upload">
+                        <input id="tracking-document-upload" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.dwg,.dxf,.txt,.csv,.zip,.rar">
+                        <span>Subir archivo</span>
+                    </label>
+                    <span id="tracking-document-result-count">0 de 0</span>
+                </div>
             </div>
             <div class="tracking-document-table-head" aria-hidden="true">
                 <span>Archivo</span>
@@ -573,11 +584,13 @@
         refreshUrl: {{ url_for('gestion_ot_bp.seguimiento_data', id=ot.item)|tojson }},
         refreshIntervalMs: 15000,
     photoCandidatesUrl: {{ url_for('reporte_bp.api_obtener_fotos_drive', ot_id=ot.item)|tojson }},
+    uploadPhotoUrl: {{ url_for('gestion_ot_bp.subir_foto_seguimiento', id=ot.item)|tojson }},
     savePhotosUrl: {{ url_for('gestion_ot_bp.guardar_fotos_seguimiento', id=ot.item)|tojson }},
     canManagePhotos: {% if current_user.rol == 'admin' %}true{% else %}false{% endif %},
     maxTrackingPhotos: {{ max_tracking_photos }},
     documentsListUrl: {{ url_for('documentos_seguimiento_bp.listar_documentos', ot_id=ot.item)|tojson }},
     documentCandidatesUrlTemplate: {{ url_for('documentos_seguimiento_bp.listar_candidatos', ot_id=ot.item, category='__CATEGORY__')|tojson }},
+    uploadDocumentUrlTemplate: {{ url_for('documentos_seguimiento_bp.subir_documento', ot_id=ot.item, category='__CATEGORY__')|tojson }},
     saveDocumentUrlTemplate: {{ url_for('documentos_seguimiento_bp.guardar_documento', ot_id=ot.item, category='__CATEGORY__')|tojson }},
     canManageDocuments: {% if current_user.rol == 'admin' %}true{% else %}false{% endif %},
     currentUserId: {{ current_user.id|tojson }},
@@ -585,6 +598,6 @@
     initialData: {{ tracking|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=8.1.0"></script>
-<script src="{{ url_for('static', filename='js/seguimiento_documentos.js') }}?v=2.0.0"></script>
+<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=8.2.0"></script>
+<script src="{{ url_for('static', filename='js/seguimiento_documentos.js') }}?v=2.1.0"></script>
 {% endblock %}

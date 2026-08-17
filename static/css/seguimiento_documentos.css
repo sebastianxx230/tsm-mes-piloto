@@ -1353,6 +1353,20 @@ body.tracking-document-modal-open {
     font-weight: 850;
 }
 
+/* Documentos 2.2: subida directa a la subcarpeta de la OT. */
+.tracking-document-toolbar-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 12px;
+}
+
+@media (max-width: 760px) {
+    .tracking-document-toolbar-actions {
+        justify-content: space-between;
+    }
+}
+
 .tracking-document-manage:hover,
 .tracking-document-manage:focus-visible {
     border-color: #94a3b8;

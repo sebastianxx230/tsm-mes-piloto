@@ -93,8 +93,9 @@ def test_messages_and_history_share_the_same_surface_components():
     assert 'class="tracking-readonly-status"' in tracking_template
     assert '>visibility</span>' not in tracking_template
     assert 'precision_manufacturing' not in tracking_template
-    assert '<h2 id="tracking-activity-title">Actividad de la OT</h2>' not in tracking_template
-    assert '<h2 id="tracking-activity-title">Mensajes e historial</h2>' in tracking_template
+    assert '<h2 id="tracking-activity-title">Mensajes e historial</h2>' not in tracking_template
+    assert '<h2 id="tracking-activity-title">OT {{ ot.ot }}</h2>' in tracking_template
+    assert 'aria-label="Mensajes e historial de la OT {{ ot.ot }}"' in tracking_template
     assert '.tracking-message-entry,' in tracking_css
     assert '.tracking-audit-entry,' in tracking_css
     assert 'Actividad compacta y coherente con la mensajeria de Produccion.' in tracking_css
@@ -110,7 +111,7 @@ def test_messages_and_history_share_the_same_surface_components():
     assert '.tracking-audit-entry {' in tracking_css
 
     back_position = tracking_template.index('<span>Volver al catálogo</span>')
-    activity_position = tracking_template.index('<span>Mensajes y actividad</span>')
+    activity_position = tracking_template.index('<span>Actividad</span>')
     production_position = tracking_template.index('<span>Abrir producción</span>')
     assert back_position < activity_position < production_position
 
@@ -151,6 +152,12 @@ def test_tracking_workspace_uses_one_layout_and_expandable_lot_details():
     assert 'Gestionar fotografías' in tracking_template
     assert 'Gestionar plano' in tracking_template
     assert 'Gestionar documentos' in tracking_template
+    assert 'id="tracking-photo-upload"' in tracking_template
+    assert 'id="tracking-document-upload"' in tracking_template
+    assert 'uploadPhotoUrl' in tracking_template
+    assert 'uploadDocumentUrlTemplate' in tracking_template
+    assert 'function uploadTrackingPhotos(input)' in tracking_script
+    assert 'function uploadDocument(input)' in read('static/js/seguimiento_documentos.js')
     assert 'const trackingViewHashes' in tracking_script
     assert 'function setupLotDetails()' in tracking_script
     assert 'Workspace 8.0: única fuente visual' in tracking_css

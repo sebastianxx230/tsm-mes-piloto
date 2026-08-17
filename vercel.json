@@ -5,6 +5,9 @@
       "maxDuration": 300
     }
   },
+  "env": {
+    "DRIVE_PARENT_FOLDER_ID_2026": "14okzNj4zVHAayDpJRY25i0LAZvXC4cVb"
+  },
   "headers": [
     {
       "source": "/static/(.*)",

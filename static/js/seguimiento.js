@@ -871,6 +871,35 @@
         updatePhotoSelectionUI();
     }
 
+    async function loadPhotoCandidates(selectedIds = []) {
+        let payload = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const response = await fetch(config.photoCandidatesUrl, {
+                cache: 'no-store',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            payload = await readApiJson(
+                response,
+                'No fue posible consultar Google Drive.',
+            );
+            if (!response.ok || !payload.success || !Array.isArray(payload.fotos)) {
+                throw new Error(payload.error || 'No fue posible consultar Google Drive.');
+            }
+            const returnedIds = new Set(payload.fotos.map((photo) => String(photo.id || '')));
+            const uploadsVisible = selectedIds.every((imageId) => (
+                returnedIds.has(String(imageId))
+            ));
+            if (uploadsVisible || attempt === 2) break;
+            await new Promise((resolve) => window.setTimeout(resolve, 450));
+        }
+        selectedIds.forEach((imageId) => selectedTrackingPhotoIds.add(String(imageId)));
+        renderPhotoCandidates(payload.fotos);
+    }
+
     async function openPhotoManager() {
         if (!config.canManagePhotos) return;
         const backdrop = document.getElementById('tracking-photo-manager-backdrop');
@@ -890,22 +919,7 @@
         window.requestAnimationFrame(() => dialog.focus());
 
         try {
-            const response = await fetch(config.photoCandidatesUrl, {
-                cache: 'no-store',
-                credentials: 'same-origin',
-                headers: {
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-            });
-            const payload = await readApiJson(
-                response,
-                'No fue posible consultar Google Drive.',
-            );
-            if (!response.ok || !payload.success || !Array.isArray(payload.fotos)) {
-                throw new Error(payload.error || 'No fue posible consultar Google Drive.');
-            }
-            renderPhotoCandidates(payload.fotos);
+            await loadPhotoCandidates();
         } catch (error) {
             availableTrackingPhotos = [];
             setPhotoManagerState(error.message || 'No fue posible consultar Google Drive.', 'error');
@@ -974,6 +988,11 @@
         document.querySelectorAll('[data-close-photo-manager]').forEach((button) => {
             button.addEventListener('click', closePhotoManager);
         });
+
+        const uploadInput = document.getElementById('tracking-photo-upload');
+        if (uploadInput) {
+            uploadInput.addEventListener('change', () => uploadTrackingPhotos(uploadInput));
+        }
 
         const candidates = document.getElementById('tracking-photo-candidates');
         if (candidates) {
@@ -1075,6 +1094,57 @@
         } catch (_) {
             if (requestToken !== photoPreviewToken || backdrop.hidden) return;
             setPhotoPreviewState('error');
+        }
+    }
+
+    async function uploadTrackingPhotos(input) {
+        const files = Array.from(input?.files || []);
+        if (!files.length || !config.uploadPhotoUrl) return;
+
+        const uploadLabel = input.closest('.tracking-drive-upload');
+        const uploadedIds = [];
+        input.disabled = true;
+        if (uploadLabel) uploadLabel.dataset.uploading = 'true';
+
+        try {
+            for (let index = 0; index < files.length; index += 1) {
+                const formData = new FormData();
+                formData.append('file', files[index]);
+                setPhotoManagerState(
+                    `Subiendo ${index + 1} de ${files.length}: ${files[index].name}`,
+                    'inline',
+                );
+                const response = await fetch(config.uploadPhotoUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRFToken': config.csrfToken || '',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: formData,
+                });
+                const payload = await readApiJson(
+                    response,
+                    'No fue posible subir la fotografía.',
+                );
+                if (!response.ok || !payload.success || !payload.photo?.id) {
+                    throw new Error(payload.error || 'No fue posible subir la fotografía.');
+                }
+                uploadedIds.push(String(payload.photo.id));
+            }
+
+            await loadPhotoCandidates(uploadedIds);
+            setPhotoManagerState(
+                `${uploadedIds.length} fotografía${uploadedIds.length === 1 ? '' : 's'} subida${uploadedIds.length === 1 ? '' : 's'}. Revisa la selección y guárdala.`,
+                'inline',
+            );
+        } catch (error) {
+            setPhotoManagerState(error.message || 'No fue posible subir las fotografías.', 'error');
+        } finally {
+            input.disabled = false;
+            input.value = '';
+            if (uploadLabel) uploadLabel.dataset.uploading = 'false';
         }
     }
 

@@ -30,8 +30,14 @@ import googleapiclient.http
 from models.catalogo_ot import CatalogoOT
 
 
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+SCOPES = [
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/drive.file',
+]
 reporte_bp = Blueprint('reporte_bp', __name__, template_folder='../templates')
+
+DRIVE_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder'
+DRIVE_PHOTOS_FOLDER_NAME = 'FOTOGRAFIAS'
 
 IS_VERCEL = bool(os.environ.get('VERCEL'))
 
@@ -284,6 +290,111 @@ def get_drive_folder_id(service, folder_name, parent_id):
         return None
 
 
+def canonical_drive_ot_folder_name(ot_code):
+    """Nombre oficial de la carpeta para las OTs del esquema 2026."""
+    normalized = str(ot_code or '').strip()
+    if normalized.upper().startswith('OT_'):
+        return normalized
+    if normalized.startswith('2026-'):
+        return f'OT_{normalized}'
+    return normalized
+
+
+def drive_ot_folder_names(ot_code):
+    """Devuelve primero el nombre nuevo y conserva el legado como respaldo."""
+    raw_name = str(ot_code or '').strip()
+    canonical_name = canonical_drive_ot_folder_name(raw_name)
+    return tuple(
+        dict.fromkeys(name for name in (canonical_name, raw_name) if name)
+    )
+
+
+def get_ot_drive_folder(service, ot_code):
+    """Localiza una OT dentro de su raíz anual configurada."""
+    parent_folder_id = get_parent_folder_by_ot(ot_code)
+    if not parent_folder_id:
+        return None, None
+
+    for folder_name in drive_ot_folder_names(ot_code):
+        folder_id = get_drive_folder_id(
+            service,
+            folder_name,
+            parent_folder_id,
+        )
+        if folder_id:
+            return folder_id, folder_name
+    return None, None
+
+
+def ensure_drive_folder(service, folder_name, parent_folder_id):
+    """Obtiene o crea una carpeta exacta dentro del padre indicado."""
+    folder_id = get_drive_folder_id(service, folder_name, parent_folder_id)
+    if folder_id:
+        return folder_id
+
+    created = service.files().create(
+        body={
+            'name': str(folder_name).strip(),
+            'mimeType': DRIVE_FOLDER_MIME_TYPE,
+            'parents': [parent_folder_id],
+        },
+        fields='id,name,parents',
+        supportsAllDrives=True,
+    ).execute()
+    return created['id']
+
+
+def ensure_ot_category_folder(service, ot_code, category_folder_name):
+    """Crea bajo demanda OT_2026-00XX/CATEGORIA y devuelve sus IDs."""
+    parent_folder_id = get_parent_folder_by_ot(ot_code)
+    if not parent_folder_id:
+        raise ValueError('La carpeta raíz anual de Google Drive no está configurada.')
+
+    ot_folder_id, ot_folder_name = get_ot_drive_folder(service, ot_code)
+    if not ot_folder_id:
+        ot_folder_name = canonical_drive_ot_folder_name(ot_code)
+        ot_folder_id = ensure_drive_folder(
+            service,
+            ot_folder_name,
+            parent_folder_id,
+        )
+
+    category_name = str(category_folder_name or '').strip().upper()
+    if not category_name:
+        raise ValueError('La categoría de Google Drive no es válida.')
+    category_folder_id = ensure_drive_folder(
+        service,
+        category_name,
+        ot_folder_id,
+    )
+    return {
+        'ot_folder_id': ot_folder_id,
+        'ot_folder_name': ot_folder_name,
+        'category_folder_id': category_folder_id,
+        'category_folder_name': category_name,
+    }
+
+
+def upload_drive_file(service, folder_id, filename, mime_type, content):
+    """Sube bytes a una carpeta ya autorizada y devuelve sus metadatos."""
+    media = googleapiclient.http.MediaIoBaseUpload(
+        io.BytesIO(content),
+        mimetype=str(mime_type or 'application/octet-stream'),
+        resumable=False,
+    )
+    return service.files().create(
+        body={
+            'name': str(filename).strip(),
+            'parents': [folder_id],
+        },
+        media_body=media,
+        fields=(
+            'id,name,mimeType,size,modifiedTime,parents,thumbnailLink'
+        ),
+        supportsAllDrives=True,
+    ).execute()
+
+
 def get_drive_subfolders(service, parent_folder_id):
     try:
         query = (
@@ -326,19 +437,26 @@ def get_images_in_folder(service, folder_id):
 
 
 def get_unique_images_for_ot(service, ot_code):
-    """Obtiene imágenes únicas de la OT y sus subcarpetas inmediatas."""
-    parent_folder_id = get_parent_folder_by_ot(ot_code)
-    ot_folder_id = get_drive_folder_id(
-        service,
-        ot_code,
-        parent_folder_id,
-    )
+    """Obtiene imágenes de FOTOGRAFIAS con respaldo para carpetas antiguas."""
+    ot_folder_id, _ = get_ot_drive_folder(service, ot_code)
     if not ot_folder_id:
         return False, []
 
-    images = list(get_images_in_folder(service, ot_folder_id))
-    for subfolder in get_drive_subfolders(service, ot_folder_id):
-        images.extend(get_images_in_folder(service, subfolder['id']))
+    subfolders = get_drive_subfolders(service, ot_folder_id)
+    photos_folder = next(
+        (
+            folder for folder in subfolders
+            if str(folder.get('name') or '').strip().upper()
+            == DRIVE_PHOTOS_FOLDER_NAME
+        ),
+        None,
+    )
+    if photos_folder:
+        images = list(get_images_in_folder(service, photos_folder['id']))
+    else:
+        images = list(get_images_in_folder(service, ot_folder_id))
+        for subfolder in subfolders:
+            images.extend(get_images_in_folder(service, subfolder['id']))
 
     unique_images = []
     seen_ids = set()
@@ -407,6 +525,11 @@ def _store_photo_count(ot_id, payload):
             'payload': payload,
             'stored_at': time.monotonic(),
         }
+
+
+def invalidate_photo_count_cache(ot_id):
+    with _photo_count_cache_lock:
+        _photo_count_cache.pop(ot_id, None)
 
 
 def get_logo_base64():
@@ -624,12 +747,7 @@ def seleccionar_fotos_reporte(ot_id):
         return 'No fue posible conectar con Google Drive.', 503
 
     ot_code = str(ot.ot).strip()
-    parent_folder_id = get_parent_folder_by_ot(ot_code)
-    ot_folder_id = get_drive_folder_id(
-        service,
-        ot_code,
-        parent_folder_id,
-    )
+    ot_folder_id, _ = get_ot_drive_folder(service, ot_code)
 
     if not ot_folder_id:
         return render_template(

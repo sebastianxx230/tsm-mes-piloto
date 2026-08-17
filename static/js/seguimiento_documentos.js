@@ -374,6 +374,7 @@
         const removeButton = document.getElementById('tracking-remove-document');
         const saveButton = document.getElementById('tracking-save-document');
         const search = document.getElementById('tracking-document-search');
+        const uploadInput = document.getElementById('tracking-document-upload');
         if (!backdrop || !dialog || !container) return;
 
         const meta = categoryMeta[category];
@@ -382,6 +383,7 @@
         candidateFiles = [];
         container.replaceChildren();
         if (search) search.value = '';
+        if (uploadInput) uploadInput.value = '';
         setText('tracking-document-manager-title', `Seleccionar ${meta.singular}`);
         setText('tracking-document-result-count', '0 de 0');
         setText('tracking-document-selection-note', 'Selecciona un archivo de la lista');
@@ -422,6 +424,61 @@
             renderCandidates(payload.files);
         } catch (error) {
             setManagerState(error.message || 'No se pudieron consultar los archivos.', 'error');
+        }
+    }
+
+    async function uploadDocument(input) {
+        const file = input?.files?.[0];
+        if (!file || !activeManagerCategory || !config.uploadDocumentUrlTemplate) return;
+
+        const uploadLabel = input.closest('.tracking-drive-upload');
+        input.disabled = true;
+        if (uploadLabel) uploadLabel.dataset.uploading = 'true';
+        setManagerState(`Subiendo ${file.name}…`);
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await fetch(
+                replaceCategory(
+                    config.uploadDocumentUrlTemplate,
+                    activeManagerCategory,
+                ),
+                {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRFToken': config.csrfToken || '',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: formData,
+                },
+            );
+            const payload = await readApiJson(
+                response,
+                'No se pudo subir el archivo.',
+            );
+            if (!response.ok || !payload.success || !payload.file?.id) {
+                throw new Error(payload.error || 'No se pudo subir el archivo.');
+            }
+
+            candidateFiles = [
+                payload.file,
+                ...candidateFiles.filter((item) => item.id !== payload.file.id),
+            ];
+            selectedCandidateId = payload.file.id;
+            renderCandidateRows();
+            setText(
+                'tracking-document-selection-note',
+                `${payload.file.name} subido. Pulsa Publicar para mostrarlo.`,
+            );
+        } catch (error) {
+            setManagerState(error.message || 'No se pudo subir el archivo.', 'error');
+        } finally {
+            input.disabled = false;
+            input.value = '';
+            if (uploadLabel) uploadLabel.dataset.uploading = 'false';
         }
     }
 
@@ -499,6 +556,11 @@
 
         const search = document.getElementById('tracking-document-search');
         if (search) search.addEventListener('input', renderCandidateRows);
+
+        const uploadInput = document.getElementById('tracking-document-upload');
+        if (uploadInput) {
+            uploadInput.addEventListener('change', () => uploadDocument(uploadInput));
+        }
 
         const saveButton = document.getElementById('tracking-save-document');
         if (saveButton) {
