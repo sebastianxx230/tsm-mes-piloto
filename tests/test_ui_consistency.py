@@ -135,5 +135,18 @@ def test_tracking_workspace_uses_one_layout_and_expandable_lot_details():
     assert 'Gestionar documentos' in tracking_template
     assert 'const trackingViewHashes' in tracking_script
     assert 'function setupLotDetails()' in tracking_script
-    assert 'Workspace 7.0: lenguaje visual único' in tracking_css
+    assert 'Workspace 8.0: única fuente visual' in tracking_css
     assert 'Documentos 2.0: comparte la misma cabecera' in document_css
+
+
+def test_tracking_workspace_styles_load_in_canonical_order_and_preview_decodes_images():
+    tracking_template = read('templates/seguimiento.html')
+    tracking_script = read('static/js/seguimiento.js')
+
+    document_css_position = tracking_template.index("css/seguimiento_documentos.css")
+    workspace_css_position = tracking_template.index("css/seguimiento.css")
+    assert document_css_position < workspace_css_position
+    assert 'Ver participación' in tracking_template
+    assert 'data-photo-preview-loading' in tracking_template
+    assert 'function preloadPhoto(url)' in tracking_script
+    assert "image.decoding = 'async';" in tracking_script

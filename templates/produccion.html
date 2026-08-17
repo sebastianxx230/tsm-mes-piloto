@@ -193,7 +193,7 @@
                     <input id="fecha-termino-input" type="date" value="{{ ot.fecha_termino.isoformat() if ot.fecha_termino else '' }}" min="{{ ot.fecha_iniciado.isoformat() if ot.fecha_iniciado else '' }}" {% if not can_edit %}disabled{% endif %} onchange="guardarFechaTermino(this)">
                 </label>
             </div>
-            <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="tsm-button tsm-button-secondary production-header-button" data-wait-for-production-saves>
+            <a href="{{ url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot) }}" class="tsm-button tsm-button-secondary production-header-button" data-wait-for-production-saves>
                 <span class="material-symbols-rounded text-[18px]">monitoring</span> Seguimiento
             </a>
             <button type="button" id="production-chat-trigger" onclick="toggleChat()" class="tsm-button tsm-button-secondary production-header-button relative" aria-controls="chat-drawer" aria-expanded="false"><span class="material-symbols-rounded text-[19px]">forum</span> Mensajes</button>

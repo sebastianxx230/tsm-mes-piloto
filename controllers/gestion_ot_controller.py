@@ -242,7 +242,10 @@ def eliminar_ot(id):
 @login_required
 def produccion(id):
     if current_user.rol == 'viewer':
-        return redirect(url_for('gestion_ot_bp.seguimiento', id=id))
+        ot = db.session.get(CatalogoOT, id)
+        if not ot or ot.archivado:
+            return "OT no encontrada", 404
+        return redirect(url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot))
 
     return _render_production(id)
 
@@ -305,24 +308,41 @@ def actualizar_fecha_termino(id):
         return jsonify({'success': False, 'error': 'No se pudo actualizar la fecha de término.'}), 500
 
 
-@gestion_ot_bp.route('/seguimiento/<int:id>')
+def _render_tracking_page(work_order):
+    tracking = _build_tracking_summary(work_order.item)
+    return render_template(
+        'seguimiento.html',
+        ot=work_order,
+        tracking=tracking,
+        max_tracking_photos=MAX_TRACKING_PHOTOS,
+    )
+
+
+@gestion_ot_bp.route('/seguimiento/ot/<path:ot_code>')
 @login_required
-def seguimiento(id):
+def seguimiento(ot_code):
     try:
-        ot = db.session.get(CatalogoOT, id)
+        normalized_code = str(ot_code or '').strip().upper()
+        ot = CatalogoOT.query.filter_by(ot=normalized_code, archivado=False).first()
         if not ot or ot.archivado:
             return "OT no encontrada", 404
 
-        tracking = _build_tracking_summary(id)
-        return render_template(
-            'seguimiento.html',
-            ot=ot,
-            tracking=tracking,
-            max_tracking_photos=MAX_TRACKING_PHOTOS,
-        )
+        return _render_tracking_page(ot)
     except Exception:
         traceback.print_exc()
         return "Error interno del servidor", 500
+
+
+@gestion_ot_bp.route('/seguimiento/<int:id>')
+@login_required
+def seguimiento_legacy(id):
+    ot = db.session.get(CatalogoOT, id)
+    if not ot or ot.archivado:
+        return "OT no encontrada", 404
+    return redirect(
+        url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot),
+        code=302,
+    )
 
 
 @gestion_ot_bp.route('/api/seguimiento/<int:id>')

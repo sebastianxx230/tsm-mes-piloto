@@ -24,6 +24,9 @@
     let selectedTrackingPhotoIds = new Set();
     let openPersonIndex = null;
     let openLotId = null;
+    let photoPreviewToken = 0;
+    const decodedPhotoUrls = new Set();
+    const photoDecodePromises = new Map();
 
     function element(tagName, className = '', text) {
         const node = document.createElement(tagName);
@@ -544,7 +547,7 @@
             detailButton.type = 'button';
             detailButton.dataset.personIndex = String(index);
             detailButton.setAttribute('aria-label', `Ver detalle de participación de ${personName}`);
-            detailButton.textContent = 'Detalle';
+            detailButton.textContent = 'Ver participación';
 
             article.append(main, detailButton);
             fragment.append(article);
@@ -595,6 +598,7 @@
             image.src = imageUrl;
             image.alt = photoName;
             image.loading = 'lazy';
+            image.decoding = 'async';
 
             button.append(image);
             figure.append(button, element('figcaption', '', photoName));
@@ -1003,27 +1007,85 @@
         if (saveButton) saveButton.addEventListener('click', saveTrackingPhotos);
     }
 
-    function openPhotoPreview(url, name) {
+    function setPhotoPreviewState(state) {
+        const stage = document.getElementById('tracking-photo-preview-stage');
+        const image = document.getElementById('tracking-photo-preview-image');
+        const loading = stage?.querySelector('[data-photo-preview-loading]');
+        const error = stage?.querySelector('[data-photo-preview-error]');
+        if (!stage) return;
+
+        stage.dataset.state = state;
+        stage.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+        if (loading) loading.hidden = state !== 'loading';
+        if (error) error.hidden = state !== 'error';
+        if (image) image.hidden = state !== 'ready';
+    }
+
+    function preloadPhoto(url) {
+        if (!url || decodedPhotoUrls.has(url)) return Promise.resolve();
+        if (photoDecodePromises.has(url)) return photoDecodePromises.get(url);
+
+        const promise = new Promise((resolve, reject) => {
+            const loader = new Image();
+            loader.decoding = 'async';
+            loader.fetchPriority = 'high';
+            loader.onload = async () => {
+                try {
+                    if (typeof loader.decode === 'function') await loader.decode();
+                } catch (_) {
+                    // onload ya confirma que la imagen está disponible para mostrar.
+                }
+                decodedPhotoUrls.add(url);
+                resolve();
+            };
+            loader.onerror = () => reject(new Error('No se pudo cargar la fotografía.'));
+            loader.src = url;
+        }).finally(() => photoDecodePromises.delete(url));
+
+        photoDecodePromises.set(url, promise);
+        return promise;
+    }
+
+    async function openPhotoPreview(url, name, thumbnail = null) {
         const backdrop = document.getElementById('tracking-photo-preview-backdrop');
         const image = document.getElementById('tracking-photo-preview-image');
         const dialog = backdrop?.querySelector('.tracking-photo-preview');
         if (!backdrop || !image || !dialog || !url) return;
 
+        const requestToken = ++photoPreviewToken;
         lastFocusedElement = document.activeElement;
-        image.src = url;
+        image.removeAttribute('src');
         image.alt = name || 'Fotografía de seguimiento';
         setText('tracking-photo-preview-name', name || 'Fotografía');
+        setPhotoPreviewState('loading');
         backdrop.hidden = false;
         syncBodyScrollLock();
         window.requestAnimationFrame(() => dialog.focus());
+
+        const thumbnailReady = thumbnail instanceof HTMLImageElement
+            && thumbnail.complete
+            && thumbnail.naturalWidth > 0;
+        if (thumbnailReady) decodedPhotoUrls.add(url);
+
+        try {
+            if (!thumbnailReady) await preloadPhoto(url);
+            if (requestToken !== photoPreviewToken || backdrop.hidden) return;
+            image.src = thumbnail?.currentSrc || url;
+            setPhotoPreviewState('ready');
+        } catch (_) {
+            if (requestToken !== photoPreviewToken || backdrop.hidden) return;
+            setPhotoPreviewState('error');
+        }
     }
 
     function closePhotoPreview() {
         const backdrop = document.getElementById('tracking-photo-preview-backdrop');
         const image = document.getElementById('tracking-photo-preview-image');
         if (!backdrop || backdrop.hidden) return;
+        photoPreviewToken += 1;
         backdrop.hidden = true;
         if (image) image.removeAttribute('src');
+        setPhotoPreviewState('idle');
         syncBodyScrollLock();
         if (lastFocusedElement instanceof HTMLElement) lastFocusedElement.focus();
     }
@@ -1034,8 +1096,19 @@
             gallery.addEventListener('click', (event) => {
                 const trigger = event.target.closest('[data-photo-preview]');
                 if (!trigger || !gallery.contains(trigger)) return;
-                openPhotoPreview(trigger.dataset.photoUrl, trigger.dataset.photoName);
+                openPhotoPreview(
+                    trigger.dataset.photoUrl,
+                    trigger.dataset.photoName,
+                    trigger.querySelector('img'),
+                );
             });
+            const warmPreview = (event) => {
+                const trigger = event.target.closest('[data-photo-preview]');
+                if (!trigger || !gallery.contains(trigger)) return;
+                preloadPhoto(trigger.dataset.photoUrl).catch(() => {});
+            };
+            gallery.addEventListener('pointerover', warmPreview);
+            gallery.addEventListener('focusin', warmPreview);
         }
         document.querySelectorAll('[data-close-photo-preview]').forEach((button) => {
             button.addEventListener('click', closePhotoPreview);

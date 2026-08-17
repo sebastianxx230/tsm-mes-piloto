@@ -154,9 +154,13 @@ def test_viewer_is_redirected_to_dedicated_tracking_view(client, login, ids):
 
     response = client.get(f"/produccion/{ids['ot']}")
     assert response.status_code == 302
-    assert response.headers['Location'].endswith(f"/seguimiento/{ids['ot']}")
+    assert response.headers['Location'].endswith('/seguimiento/ot/2026-TEST')
 
-    tracking = client.get(f"/seguimiento/{ids['ot']}")
+    legacy = client.get(f"/seguimiento/{ids['ot']}")
+    assert legacy.status_code == 302
+    assert legacy.headers['Location'].endswith('/seguimiento/ot/2026-TEST')
+
+    tracking = client.get('/seguimiento/ot/2026-TEST')
     assert tracking.status_code == 200
     page = tracking.get_data(as_text=True)
     assert 'Vista de seguimiento' in page
@@ -225,7 +229,7 @@ def test_tracking_view_summarizes_progress_personnel_and_log(app, client, login,
         db.session.commit()
 
     login('viewer')
-    response = client.get(f"/seguimiento/{ids['ot']}")
+    response = client.get('/seguimiento/ot/2026-TEST')
     page = response.get_data(as_text=True)
 
     assert response.status_code == 200

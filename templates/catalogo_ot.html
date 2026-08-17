@@ -213,7 +213,7 @@
                             <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="text-slate-500 hover:bg-blue-50 hover:text-blue-600" title="Gestionar producción">
                                 <span class="material-symbols-rounded text-[17px] block">route</span>
                             </a>
-                            <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="text-slate-500 hover:bg-blue-50 hover:text-blue-600" title="Vista de seguimiento">
+                            <a href="{{ url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot) }}" class="text-slate-500 hover:bg-blue-50 hover:text-blue-600" title="Vista de seguimiento">
                                 <span class="material-symbols-rounded text-[17px] block">monitoring</span>
                             </a>
                             <a href="{{ url_for('reporte_bp.seleccionar_fotos_reporte', ot_id=ot.item) }}"
@@ -235,7 +235,7 @@
                         </div>
                         {% else %}
                         <div class="flex justify-center">
-                            <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="ot-viewer-action" aria-label="Ver seguimiento" data-tooltip="Ver seguimiento">
+                            <a href="{{ url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot) }}" class="ot-viewer-action" aria-label="Ver seguimiento" data-tooltip="Ver seguimiento">
                                 <span class="material-symbols-rounded text-[18px] block">visibility</span>
                             </a>
                         </div>
@@ -290,7 +290,7 @@
                     <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="h-[30px] flex items-center justify-center text-slate-500 bg-slate-50 border border-slate-200 rounded transition-colors shadow-sm">
                         <span class="material-symbols-rounded text-[16px]">route</span>
                     </a>
-                    <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="h-[30px] flex items-center justify-center text-slate-500 bg-slate-50 border border-slate-200 rounded transition-colors shadow-sm">
+                    <a href="{{ url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot) }}" class="h-[30px] flex items-center justify-center text-slate-500 bg-slate-50 border border-slate-200 rounded transition-colors shadow-sm">
                         <span class="material-symbols-rounded text-[16px]">monitoring</span>
                     </a>
                     <a href="{{ url_for('reporte_bp.seleccionar_fotos_reporte', ot_id=ot.item) }}"
@@ -312,7 +312,7 @@
                 </div>
                 {% else %}
                 <div class="mt-2 flex justify-end">
-                    <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="ot-viewer-action" aria-label="Ver seguimiento" data-tooltip="Ver seguimiento">
+                    <a href="{{ url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot) }}" class="ot-viewer-action" aria-label="Ver seguimiento" data-tooltip="Ver seguimiento">
                         <span class="material-symbols-rounded text-[17px]">visibility</span>
                     </a>
                 </div>

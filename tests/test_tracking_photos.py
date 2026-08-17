@@ -122,7 +122,7 @@ def test_viewer_can_load_only_a_published_tracking_photo(
 def test_tracking_and_production_expose_the_new_photo_workflow(client, login, ids):
     login('admin')
 
-    tracking_page = client.get(f"/seguimiento/{ids['ot']}").get_data(as_text=True)
+    tracking_page = client.get('/seguimiento/ot/2026-TEST').get_data(as_text=True)
     production_page = client.get(f"/produccion/{ids['ot']}").get_data(as_text=True)
 
     assert 'Seleccionar fotografías' in tracking_page
@@ -131,6 +131,6 @@ def test_tracking_and_production_expose_the_new_photo_workflow(client, login, id
     assert 'Seguimiento' in production_page
 
     login('viewer')
-    viewer_page = client.get(f"/seguimiento/{ids['ot']}").get_data(as_text=True)
+    viewer_page = client.get('/seguimiento/ot/2026-TEST').get_data(as_text=True)
     assert 'Seleccionar fotografías' not in viewer_page
     assert 'Fotografías del avance' in viewer_page

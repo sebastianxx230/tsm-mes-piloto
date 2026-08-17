@@ -5,8 +5,8 @@
 
 {% block head_extra %}
 <meta name="referrer" content="no-referrer">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=7.0.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=2.0.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=2.1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.0.0">
 {% endblock %}
 
 {% block content %}
@@ -245,8 +245,9 @@
                     <span id="tracking-personnel-note">{{ tracking.personnel|length }} persona{{ '' if tracking.personnel|length == 1 else 's' }} vinculada{{ '' if tracking.personnel|length == 1 else 's' }} a la producción.</span>
                 </div>
                 <div class="tracking-workspace-actions">
-                    <label class="tracking-search" for="tracking-person-search">
-                        <input id="tracking-person-search" type="search" placeholder="Buscar persona, proceso o elemento" autocomplete="off">
+                    <label class="tracking-search" for="tracking-person-search" aria-label="Buscar en el personal registrado">
+                        <span>Buscar</span>
+                        <input id="tracking-person-search" type="search" placeholder="Nombre, proceso o elemento" autocomplete="off">
                     </label>
                 </div>
             </header>
@@ -260,8 +261,8 @@
                             <span>{{ person.component_count }} elemento{{ '' if person.component_count == 1 else 's' }} · {{ person.lot_count }} lote{{ '' if person.lot_count == 1 else 's' }}</span>
                         </div>
                     </div>
-                    <button type="button" class="tracking-person-action" data-person-index="{{ loop.index0 }}" aria-label="Ver detalle de {{ person.name }}">
-                        <span>Detalle</span>
+                    <button type="button" class="tracking-person-action" data-person-index="{{ loop.index0 }}" aria-label="Ver detalle de participación de {{ person.name }}">
+                        <span>Ver participación</span>
                     </button>
                 </article>
                 {% else %}
@@ -552,8 +553,17 @@
                 </div>
                 <button type="button" class="tracking-icon-button" data-close-photo-preview aria-label="Cerrar fotografía"><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
             </header>
-            <div class="tracking-photo-preview-stage">
-                <img id="tracking-photo-preview-image" alt="">
+            <div class="tracking-photo-preview-stage" id="tracking-photo-preview-stage" data-state="idle" aria-live="polite">
+                <div class="tracking-photo-preview-loading" data-photo-preview-loading role="status">
+                    <span aria-hidden="true"></span>
+                    <strong>Preparando fotografía</strong>
+                    <p>Optimizando la vista previa…</p>
+                </div>
+                <div class="tracking-photo-preview-error" data-photo-preview-error hidden>
+                    <strong>No se pudo mostrar la fotografía</strong>
+                    <p>Intenta abrirla nuevamente.</p>
+                </div>
+                <img id="tracking-photo-preview-image" alt="" hidden>
             </div>
         </section>
     </div>
@@ -576,6 +586,6 @@
     initialData: {{ tracking|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=7.0.0"></script>
+<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=8.0.0"></script>
 <script src="{{ url_for('static', filename='js/seguimiento_documentos.js') }}?v=2.0.0"></script>
 {% endblock %}
