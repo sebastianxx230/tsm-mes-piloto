@@ -6,7 +6,7 @@
 
 {% block head_extra %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/produccion.css') }}?v=3.8.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/produccion.css') }}?v=4.0.1">
 {% endblock %}
 
 {% block content %}
@@ -15,7 +15,7 @@
 
 {% if can_edit %}
 <div id="modal-nuevo-pl" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-200">
-    <div class="tsm-modal-card bg-white border border-slate-200 rounded-xl max-w-sm w-full shadow-2xl transform scale-95 transition-all duration-200 overflow-hidden" id="box-nuevo-pl">
+    <div class="tsm-modal-card bg-white border border-slate-200 rounded-xl max-w-md w-full shadow-2xl transform scale-95 transition-all duration-200 overflow-hidden" id="box-nuevo-pl">
         <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
             <h3 class="font-black text-[14px] text-slate-800 tracking-tight">Nueva Lista de Empaque</h3>
             <button onclick="cerrarModalPL('modal-nuevo-pl', 'box-nuevo-pl')" class="text-slate-400 hover:text-red-600 transition-colors"><span class="material-symbols-rounded block text-[20px]">close</span></button>
@@ -23,12 +23,41 @@
         <div class="p-5">
             <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Nombre de la Pestaña / Lote</label>
             <input type="text" id="input-nuevo-pl" class="w-full h-10 px-3 border border-slate-300 rounded-lg text-[13px] font-bold text-slate-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all shadow-sm uppercase" onkeydown="if(event.key === 'Enter') guardarNuevoPL()">
+            <div class="production-new-lot-period">
+                <div class="production-new-lot-period-copy">
+                    <strong>Período real de fabricación</strong>
+                    <span>Opcional. Puedes completarlo ahora o al importar la hoja.</span>
+                </div>
+                <div class="production-new-lot-period-fields">
+                    <label><span>Inicio</span><input type="date" id="input-nuevo-pl-inicio"></label>
+                    <label><span>Término</span><input type="date" id="input-nuevo-pl-termino"></label>
+                </div>
+            </div>
         </div>
         <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
             <button onclick="cerrarModalPL('modal-nuevo-pl', 'box-nuevo-pl')" class="px-4 py-2 bg-white border border-slate-300 text-slate-600 font-bold text-[12px] rounded-lg hover:bg-slate-50 transition-colors shadow-sm">Cancelar</button>
             <button onclick="guardarNuevoPL()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[12px] rounded-lg transition-colors shadow-sm">Crear Pestaña</button>
         </div>
     </div>
+</div>
+
+<div id="personal-master-overlay" class="production-personnel-overlay hidden opacity-0" aria-hidden="true">
+    <section class="production-personnel-dialog scale-95" id="personal-master-dialog" role="dialog" aria-modal="true" aria-labelledby="personal-master-title" tabindex="-1">
+        <header>
+            <div><p>Directorio operativo</p><h2 id="personal-master-title">Personal de planta</h2></div>
+            <button type="button" onclick="cerrarPadronPersonal()" aria-label="Cerrar padrón de personal"><span class="material-symbols-rounded">close</span></button>
+        </header>
+        <div class="production-personnel-master-body">
+            <form class="production-personnel-create" onsubmit="registrarPersonal(event)">
+                <label for="personal-master-name">Registrar una sola vez</label>
+                <div><input id="personal-master-name" type="text" maxlength="120" placeholder="Nombre y apellido" autocomplete="off"><button type="submit">Agregar</button></div>
+                <small>El sistema evita duplicados por mayúsculas, espacios y tildes.</small>
+            </form>
+            <div class="production-personnel-directory-heading"><strong>Personal disponible</strong><span id="personal-master-count">0 personas</span></div>
+            <div class="production-personnel-directory" id="personal-master-list"></div>
+        </div>
+        <footer><button type="button" onclick="cerrarPadronPersonal()">Cerrar</button></footer>
+    </section>
 </div>
 {% endif %}
 
@@ -48,6 +77,27 @@
             <button onclick="guardarRenombrePL()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[12px] rounded-lg transition-colors shadow-sm">Guardar Nombre</button>
         </div>
     </div>
+</div>
+{% endif %}
+
+{% if can_edit %}
+<div id="personnel-selector-overlay" class="production-personnel-overlay production-personnel-selector-overlay hidden opacity-0" aria-hidden="true">
+    <section class="production-personnel-dialog production-personnel-selector-dialog scale-95" id="personnel-selector-dialog" role="dialog" aria-modal="true" aria-labelledby="personnel-selector-title" tabindex="-1">
+        <header>
+            <div><p>Asignación por proceso</p><h2 id="personnel-selector-title">Seleccionar personal</h2><span id="personnel-selector-context"></span></div>
+            <button type="button" onclick="cerrarSelectorPersonal()" aria-label="Cerrar selector de personal"><span class="material-symbols-rounded">close</span></button>
+        </header>
+        <div class="production-personnel-selector-body">
+            <label class="production-personnel-search"><span class="material-symbols-rounded">search</span><input id="personnel-selector-search" type="search" placeholder="Buscar por nombre" autocomplete="off" oninput="filtrarSelectorPersonal()"></label>
+            <div class="production-personnel-options" id="personnel-selector-options"></div>
+            <div class="production-personnel-selector-empty" id="personnel-selector-empty" hidden>
+                <strong>No hay personal disponible</strong>
+                <span>Registra primero a las personas en el padrón de planta.</span>
+                <button type="button" onclick="abrirPadronDesdeSelector()">Abrir padrón</button>
+            </div>
+        </div>
+        <footer><button type="button" onclick="cerrarSelectorPersonal()">Cancelar</button><button type="button" class="is-primary" onclick="guardarSeleccionPersonal()">Guardar asignación</button></footer>
+    </section>
 </div>
 {% endif %}
 
@@ -197,6 +247,7 @@
                 <span class="material-symbols-rounded text-[18px]">monitoring</span> Seguimiento
             </a>
             <button type="button" id="production-chat-trigger" onclick="toggleChat()" class="tsm-button tsm-button-secondary production-header-button relative" aria-controls="chat-drawer" aria-expanded="false"><span class="material-symbols-rounded text-[19px]">forum</span> Mensajes</button>
+            {% if can_edit %}<button type="button" onclick="abrirPadronPersonal()" class="tsm-button tsm-button-secondary production-header-button"><span class="material-symbols-rounded text-[18px]">badge</span> Personal</button>{% endif %}
         </div>
     </div>
 
@@ -260,10 +311,19 @@
         </div>
 
         <div id="table-module" class="relative flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all">
-            <div class="relative z-50 flex flex-col items-start justify-between gap-3 border-b border-slate-200 bg-slate-50/70 p-3 md:flex-row md:items-center">
-                <div class="flex h-9 w-full shrink-0 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 md:w-64">
-                    <span class="material-symbols-rounded text-slate-400 text-[16px]">search</span>
-                    <input type="text" id="searchMatriz" placeholder="Buscar elemento" onkeyup="filtrarMatriz()" class="w-full text-[12px] bg-transparent border-none outline-none text-slate-700 font-medium">
+            <div class="relative z-50 flex flex-col items-start justify-between gap-3 border-b border-slate-200 bg-slate-50/70 p-3 xl:flex-row xl:items-center">
+                <div class="production-table-context">
+                    <div class="flex h-9 w-full shrink-0 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 md:w-64">
+                        <span class="material-symbols-rounded text-slate-400 text-[16px]">search</span>
+                        <input type="text" id="searchMatriz" placeholder="Buscar elemento" onkeyup="filtrarMatriz()" class="w-full text-[12px] bg-transparent border-none outline-none text-slate-700 font-medium">
+                    </div>
+                    <div class="production-lot-period" aria-label="Período real del lote">
+                        <span>Período real</span>
+                        <label>Inicio <input id="packing-period-start" type="date" {% if not can_edit %}disabled{% endif %}></label>
+                        <i aria-hidden="true">—</i>
+                        <label>Término <input id="packing-period-end" type="date" {% if not can_edit %}disabled{% endif %}></label>
+                        {% if can_edit %}<button type="button" id="packing-period-save" onclick="guardarPeriodoPL()">Guardar</button>{% endif %}
+                    </div>
                 </div>
                 <div class="flex items-center gap-2 w-full md:w-auto overflow-x-auto hide-scrollbar pb-1 md:pb-0 shrink-0">
                     <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-1.5 rounded-md whitespace-nowrap"><span class="material-symbols-rounded text-[14px] text-red-500">warning</span> <span class="hidden sm:inline">Faltantes</span></div>
@@ -358,5 +418,5 @@
     };
 </script>
 
-<script src="{{ url_for('static', filename='js/produccion.js') }}?v=3.8.0"></script>
+<script src="{{ url_for('static', filename='js/produccion.js') }}?v=4.0.1"></script>
 {% endblock %}

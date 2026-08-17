@@ -99,13 +99,14 @@ def test_tracking_progress_is_weighted_by_piece_quantity(app, ids):
             longitud='1000',
             tipo='fabricacion',
             estado_suministro='No requerido',
+            hab_real=0,
         ))
         db.session.commit()
 
         tracking = _build_tracking_summary(ids['ot'])
         hab = next(process for process in tracking['processes'] if process['key'] == 'hab')
         assert hab['progress'] == 10.0
-        assert tracking['overall_progress'] == 1.4
+        assert tracking['overall_progress'] == 10.0
         assert tracking['unit_count'] == 100
 
 

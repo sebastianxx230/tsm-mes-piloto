@@ -6,7 +6,7 @@
 {% block head_extra %}
 <meta name="referrer" content="same-origin">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=2.2.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.4.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.5.0">
 {% endblock %}
 
 {% block content %}
@@ -598,6 +598,6 @@
     initialData: {{ tracking|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=8.2.0"></script>
+<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=8.3.0"></script>
 <script src="{{ url_for('static', filename='js/seguimiento_documentos.js') }}?v=2.1.0"></script>
 {% endblock %}

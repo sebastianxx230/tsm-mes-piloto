@@ -22,6 +22,7 @@ from utils.production_metrics import (
     process_settings,
     quantity_weighted_average,
 )
+from utils.production_schema import ensure_production_storage_schema
 from utils.tracking_schema import (
     TrackingSchemaError,
     ensure_tracking_storage_schema,
@@ -665,6 +666,7 @@ def seguimiento_photo_image(photo_id):
 
 def _render_production(id):
     try:
+        ensure_production_storage_schema()
         ot = db.session.get(CatalogoOT, id)
         if not ot or ot.archivado:
             return "OT no encontrada", 404
@@ -796,6 +798,7 @@ def _tracking_process_breakdown(components, active_processes, weights):
 
 def _build_tracking_summary(ot_id):
     ensure_tracking_storage_schema()
+    ensure_production_storage_schema()
     work_order = db.session.get(CatalogoOT, ot_id)
     if work_order is None or work_order.archivado:
         raise ValueError('La OT no existe.')
