@@ -1873,6 +1873,20 @@ function agregarMensajeAlDOM(msg) {
     const messageRow = document.createElement('div');
     messageRow.className = 'production-chat-message-row';
 
+    let avatar = null;
+    if (!esMio) {
+        avatar = document.createElement('span');
+        avatar.className = 'production-chat-avatar';
+        avatar.setAttribute('aria-hidden', 'true');
+        avatar.textContent = String(nameText)
+            .trim()
+            .split(/\s+/)
+            .slice(0, 2)
+            .map(part => part.charAt(0))
+            .join('')
+            .toUpperCase() || 'US';
+    }
+
     const bubble = document.createElement('div');
     bubble.className = 'production-chat-bubble';
     bubble.textContent = String(msg.mensaje ?? '');
@@ -1892,6 +1906,7 @@ function agregarMensajeAlDOM(msg) {
     }
 
     if (esMio && deleteButton) messageRow.appendChild(deleteButton);
+    if (avatar) messageRow.appendChild(avatar);
     messageRow.appendChild(bubble);
     if (!esMio && deleteButton) messageRow.appendChild(deleteButton);
 

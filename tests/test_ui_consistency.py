@@ -65,6 +65,10 @@ def test_production_header_chat_and_matrix_share_stable_layout_contracts():
     assert 'Inicio de Mensajer' not in production_script
     assert 'coordinación operativa' not in production_script
     assert 'production-chat-message' in production_script
+    assert 'production-chat-avatar' in production_script
+    assert 'production-chat-avatar' in production_css
+    assert 'Mensajes 3.8: comparte el panel sobrio y estable de Seguimiento.' in production_css
+    assert 'height: min(570px, calc(100dvh - 104px));' in production_css
     assert 'background: transparent;' in production_css
     assert 'backdrop-filter: none;' in production_css
 
@@ -96,12 +100,19 @@ def test_messages_and_history_share_the_same_surface_components():
     assert 'Actividad compacta y coherente con la mensajeria de Produccion.' in tracking_css
     assert '.tracking-message-entry .tracking-activity-copy > p' in tracking_css
     assert '.tracking-message-entry.is-current-user {' in tracking_css
-    assert 'Mensajes 8.2: panel de conversación compacto y sobrio.' in tracking_css
+    assert 'Mensajes 8.3: altura estable y burbujas ajustadas al contenido.' in tracking_css
+    assert 'width: fit-content;' in tracking_css
+    assert 'height: min(570px, calc(100dvh - 104px));' in tracking_css
     assert 'class="tracking-chat-avatar"' not in tracking_template
     assert 'currentUserId' in tracking_script
     scroll_lock = tracking_script.split('function syncBodyScrollLock()', 1)[1].split('function openActivityDrawer', 1)[0]
     assert 'activityBackdrop' not in scroll_lock
     assert '.tracking-audit-entry {' in tracking_css
+
+    back_position = tracking_template.index('<span>Volver al catálogo</span>')
+    activity_position = tracking_template.index('<span>Mensajes y actividad</span>')
+    production_position = tracking_template.index('<span>Abrir producción</span>')
+    assert back_position < activity_position < production_position
 
 
 def test_empty_document_states_are_centered_in_the_panel():

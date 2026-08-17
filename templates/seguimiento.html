@@ -6,7 +6,7 @@
 {% block head_extra %}
 <meta name="referrer" content="no-referrer">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=2.1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.2.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.3.0">
 {% endblock %}
 
 {% block content %}
@@ -32,14 +32,14 @@
         </div>
 
         <nav class="tracking-order-actions" aria-label="Acciones de la orden">
-            <button type="button" class="tracking-action tracking-action-activity" data-open-activity>
-                <span class="material-symbols-rounded" aria-hidden="true">forum</span>
-                <span>Mensajes y actividad</span>
-            </button>
             <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}" class="tracking-action tracking-action-secondary">
                 <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
                 <span>Volver al catálogo</span>
             </a>
+            <button type="button" class="tracking-action tracking-action-activity" data-open-activity>
+                <span class="material-symbols-rounded" aria-hidden="true">forum</span>
+                <span>Mensajes y actividad</span>
+            </button>
             {% if current_user.rol in ['admin', 'editor'] %}
             <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="tracking-action tracking-action-primary">
                 <span class="material-symbols-rounded" aria-hidden="true">manufacturing</span>

@@ -5005,7 +5005,7 @@ body.tracking-overlay-open {
     }
 }
 
-/* Mensajes 8.2: panel de conversación compacto y sobrio. */
+/* Mensajes 8.3: altura estable y burbujas ajustadas al contenido. */
 .tracking-activity-backdrop {
     top: 76px;
     right: 0;
@@ -5020,7 +5020,7 @@ body.tracking-overlay-open {
 
 .tracking-activity-drawer {
     width: min(390px, calc(100vw - 44px));
-    height: auto;
+    height: min(570px, calc(100dvh - 104px));
     max-height: calc(100dvh - 104px);
     border: 1px solid #d5dae1;
     border-radius: 12px;
@@ -5173,9 +5173,9 @@ body.tracking-overlay-open {
 }
 
 .tracking-drawer-body {
-    min-height: 220px;
-    max-height: min(470px, calc(100dvh - 210px));
-    flex: 0 1 auto;
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 auto;
     overflow-y: auto;
     scrollbar-color: #cbd5e1 transparent;
     scrollbar-width: thin;
@@ -5221,8 +5221,13 @@ body.tracking-overlay-open {
 }
 
 .tracking-message-entry .tracking-activity-copy {
-    width: auto;
+    display: flex;
+    width: fit-content;
+    min-width: 0;
     max-width: 78%;
+    flex: 0 1 auto;
+    align-items: flex-start;
+    flex-direction: column;
 }
 
 .tracking-message-entry .tracking-activity-meta {
@@ -5230,6 +5235,9 @@ body.tracking-overlay-open {
 }
 
 .tracking-message-entry .tracking-activity-copy > p {
+    display: inline-block;
+    width: fit-content;
+    max-width: 100%;
     margin-top: 4px !important;
     padding: 8px 11px;
     border: 0;
@@ -5248,6 +5256,10 @@ body.tracking-overlay-open {
 
 .tracking-message-entry.is-current-user .tracking-activity-avatar {
     display: none;
+}
+
+.tracking-message-entry.is-current-user .tracking-activity-copy {
+    align-items: flex-end;
 }
 
 .tracking-message-entry.is-current-user .tracking-activity-copy > p {
@@ -5289,7 +5301,7 @@ body.tracking-overlay-open {
 
     .tracking-activity-drawer {
         width: 100%;
-        height: auto;
+        height: min(570px, calc(100dvh - 92px));
         max-height: calc(100dvh - 92px);
         border: 1px solid #d5dae1;
         border-radius: 12px;
@@ -5306,7 +5318,7 @@ body.tracking-overlay-open {
     }
 
     .tracking-activity-drawer {
-        height: auto;
+        height: min(570px, calc(100dvh - 88px));
         max-height: calc(100dvh - 88px);
         border: 1px solid #d5dae1;
         border-radius: 12px;

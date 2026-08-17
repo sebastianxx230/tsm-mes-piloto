@@ -6,7 +6,7 @@
 
 {% block head_extra %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/produccion.css') }}?v=3.7.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/produccion.css') }}?v=3.8.0">
 {% endblock %}
 
 {% block content %}
@@ -72,7 +72,7 @@
 </div>
 
 <div id="chat-overlay" class="production-chat-overlay opacity-0 pointer-events-none" onclick="toggleChat()"></div>
-<aside id="chat-drawer" class="production-chat-drawer translate-x-full" aria-label="Mensajes de la orden de trabajo" aria-hidden="true">
+<aside id="chat-drawer" class="production-chat-drawer translate-x-full" role="dialog" aria-modal="true" aria-label="Mensajes de la orden de trabajo" aria-hidden="true">
     <header class="production-chat-header">
         <div class="production-chat-heading">
             <div>
@@ -358,5 +358,5 @@
     };
 </script>
 
-<script src="{{ url_for('static', filename='js/produccion.js') }}?v=3.7.0"></script>
+<script src="{{ url_for('static', filename='js/produccion.js') }}?v=3.8.0"></script>
 {% endblock %}
