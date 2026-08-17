@@ -1122,13 +1122,11 @@
     }
 
     function syncBodyScrollLock() {
-        const activityBackdrop = document.getElementById('tracking-activity-backdrop');
         const personBackdrop = document.getElementById('tracking-person-detail-backdrop');
         const photoManagerBackdrop = document.getElementById('tracking-photo-manager-backdrop');
         const photoPreviewBackdrop = document.getElementById('tracking-photo-preview-backdrop');
         const hasOpenOverlay = Boolean(
-            (activityBackdrop && !activityBackdrop.hidden)
-            || (personBackdrop && !personBackdrop.hidden)
+            (personBackdrop && !personBackdrop.hidden)
             || (photoManagerBackdrop && !photoManagerBackdrop.hidden)
             || (photoPreviewBackdrop && !photoPreviewBackdrop.hidden)
         );

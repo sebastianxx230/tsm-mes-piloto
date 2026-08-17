@@ -6,7 +6,7 @@
 {% block head_extra %}
 <meta name="referrer" content="no-referrer">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=2.1.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.0.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.1.0">
 {% endblock %}
 
 {% block content %}
@@ -349,7 +349,10 @@
                 <div class="tracking-drawer-title">
                     <div>
                         <h2 id="tracking-activity-title">Mensajes e historial</h2>
-                        <span>OT {{ ot.ot }}</span>
+                        <div class="tracking-drawer-subline">
+                            <span>OT {{ ot.ot }}</span>
+                            <span class="tracking-readonly-status" aria-label="Vista de solo lectura">Solo lectura</span>
+                        </div>
                     </div>
                 </div>
                 <button type="button" class="tracking-icon-button" data-close-activity aria-label="Cerrar actividad">
@@ -372,10 +375,6 @@
 
             <div class="tracking-drawer-body">
                 <section class="tracking-activity-pane" id="tracking-messages-pane" role="tabpanel" aria-labelledby="tracking-messages-tab">
-                    <div class="tracking-readonly-note">
-                        <span class="material-symbols-rounded" aria-hidden="true">visibility</span>
-                        <span>Vista de solo lectura</span>
-                    </div>
                     <div class="tracking-activity-list" id="tracking-message-list">
                         {% for message in tracking.manual_messages %}
                         <article class="tracking-activity-entry tracking-message-entry{% if message.usuario_id == current_user.id %} is-current-user{% endif %}">
@@ -586,6 +585,6 @@
     initialData: {{ tracking|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=8.0.0"></script>
+<script src="{{ url_for('static', filename='js/seguimiento.js') }}?v=8.1.0"></script>
 <script src="{{ url_for('static', filename='js/seguimiento_documentos.js') }}?v=2.0.0"></script>
 {% endblock %}

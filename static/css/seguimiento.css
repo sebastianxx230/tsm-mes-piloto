@@ -5004,3 +5004,250 @@ body.tracking-overlay-open {
         border-radius: 0;
     }
 }
+
+/* Mensajes 8.1: ventana flotante tipo Messenger. */
+.tracking-activity-backdrop {
+    top: 76px;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 0 22px 22px;
+    background: rgba(15, 23, 42, 0.07);
+    backdrop-filter: none;
+}
+
+.tracking-activity-drawer {
+    width: min(390px, calc(100vw - 44px));
+    height: min(610px, calc(100dvh - 116px));
+    max-height: calc(100dvh - 116px);
+    border: 1px solid #cfd9e6;
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow:
+        0 24px 64px rgba(15, 23, 42, 0.2),
+        0 4px 14px rgba(15, 23, 42, 0.1);
+    animation: tracking-chat-window-in 180ms cubic-bezier(.2, .8, .2, 1);
+    transform-origin: right bottom;
+}
+
+@keyframes tracking-chat-window-in {
+    from {
+        opacity: 0;
+        transform: translate3d(10px, 14px, 0) scale(.975);
+    }
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+.tracking-drawer-header {
+    min-height: 66px;
+    padding: 12px 12px 11px 16px;
+    border-top: 3px solid #2563eb;
+    border-bottom: 1px solid #e2e8f0;
+    border-radius: 17px 17px 0 0;
+    background: #ffffff;
+    color: #172033;
+}
+
+.tracking-drawer-title h2 {
+    margin: 0;
+    color: #172033;
+    font-size: 15px;
+    font-weight: 850;
+    letter-spacing: -.012em;
+}
+
+.tracking-drawer-subline {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 3px;
+}
+
+.tracking-drawer-subline > span:first-child {
+    color: #718096;
+    font-size: 9px;
+    font-weight: 750;
+}
+
+.tracking-readonly-status {
+    display: inline-flex;
+    min-height: 17px;
+    align-items: center;
+    padding: 0 6px;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #94a3b8;
+    font-size: 7.5px;
+    font-weight: 750;
+    letter-spacing: .01em;
+}
+
+.tracking-drawer-header .tracking-icon-button {
+    width: 31px;
+    height: 31px;
+    border: 0 !important;
+    border-radius: 50%;
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.tracking-drawer-header .tracking-icon-button:hover {
+    border: 0 !important;
+    background: #e7edf4;
+    color: #1e293b;
+    transform: none;
+}
+
+.tracking-activity-tabs {
+    min-height: 50px;
+    gap: 4px;
+    padding: 7px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #ffffff;
+}
+
+.tracking-activity-tab {
+    min-height: 35px;
+    border-radius: 10px;
+    color: #64748b;
+    font-size: 10.5px;
+    font-weight: 750;
+}
+
+.tracking-activity-tab::after {
+    display: none;
+}
+
+.tracking-activity-tab:hover {
+    background: #f6f8fb;
+    color: #334155;
+}
+
+.tracking-activity-tab.is-active {
+    background: #edf4ff;
+    color: #1d4ed8;
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.06);
+}
+
+.tracking-activity-tab b {
+    min-width: 19px;
+    height: 19px;
+    border-radius: 999px;
+    font-size: 7.5px;
+}
+
+.tracking-drawer-body,
+.tracking-activity-pane {
+    background: #f5f7fa;
+}
+
+.tracking-drawer-body {
+    scrollbar-color: #cbd5e1 transparent;
+    scrollbar-width: thin;
+}
+
+.tracking-activity-pane {
+    padding: 11px 14px 16px;
+}
+
+#tracking-messages-pane {
+    padding-top: 7px;
+}
+
+.tracking-readonly-note {
+    min-height: 20px;
+    margin: 0 0 5px;
+    padding: 0 2px;
+    color: #8492a6;
+    font-size: 8px;
+}
+
+.tracking-message-entry {
+    padding: 7px 0 10px;
+}
+
+.tracking-message-entry .tracking-activity-copy {
+    max-width: 84%;
+}
+
+.tracking-message-entry .tracking-activity-meta {
+    padding: 0 4px;
+}
+
+.tracking-message-entry .tracking-activity-copy > p {
+    margin-top: 4px !important;
+    padding: 8px 11px;
+    border-color: #d9e2ec;
+    border-radius: 14px 14px 14px 5px;
+    background: #ffffff;
+    color: #334155;
+    font-size: 11px;
+    line-height: 1.4;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .055);
+}
+
+.tracking-message-entry.is-current-user .tracking-activity-copy > p {
+    border-color: #2563eb;
+    border-radius: 14px 14px 5px 14px;
+    background: #2563eb;
+    box-shadow: 0 3px 9px rgba(37, 99, 235, .15);
+}
+
+.tracking-activity-date {
+    padding: 8px 0 4px;
+}
+
+.tracking-activity-date span {
+    color: #8794a6;
+    font-size: 7.5px;
+}
+
+.tracking-audit-entry {
+    padding: 11px 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tracking-activity-drawer {
+        animation: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .tracking-activity-backdrop {
+        top: 76px;
+        padding: 0 8px 8px;
+    }
+
+    .tracking-activity-drawer {
+        width: 100%;
+        height: min(620px, calc(100dvh - 92px));
+        max-height: calc(100dvh - 92px);
+        border: 1px solid #cfd9e6;
+        border-radius: 16px;
+    }
+
+    .tracking-drawer-header {
+        border-radius: 15px 15px 0 0;
+    }
+}
+
+@media (max-width: 420px) {
+    .tracking-activity-backdrop {
+        padding: 0;
+    }
+
+    .tracking-activity-drawer {
+        height: calc(100dvh - 76px);
+        max-height: calc(100dvh - 76px);
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 16px 16px 0 0;
+    }
+}

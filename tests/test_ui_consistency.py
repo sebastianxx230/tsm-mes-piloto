@@ -83,8 +83,11 @@ def test_production_header_chat_and_matrix_share_stable_layout_contracts():
 def test_messages_and_history_share_the_same_surface_components():
     tracking_template = read('templates/seguimiento.html')
     tracking_css = read('static/css/seguimiento.css')
+    tracking_script = read('static/js/seguimiento.js')
 
-    assert tracking_template.count('class="tracking-readonly-note"') == 2
+    assert tracking_template.count('class="tracking-readonly-note"') == 1
+    assert 'class="tracking-readonly-status"' in tracking_template
+    assert '>visibility</span>' not in tracking_template
     assert 'precision_manufacturing' not in tracking_template
     assert '<h2 id="tracking-activity-title">Actividad de la OT</h2>' not in tracking_template
     assert '<h2 id="tracking-activity-title">Mensajes e historial</h2>' in tracking_template
@@ -93,7 +96,10 @@ def test_messages_and_history_share_the_same_surface_components():
     assert 'Actividad compacta y coherente con la mensajeria de Produccion.' in tracking_css
     assert '.tracking-message-entry .tracking-activity-copy > p' in tracking_css
     assert '.tracking-message-entry.is-current-user {' in tracking_css
-    assert 'currentUserId' in read('static/js/seguimiento.js')
+    assert 'Mensajes 8.1: ventana flotante tipo Messenger.' in tracking_css
+    assert 'currentUserId' in tracking_script
+    scroll_lock = tracking_script.split('function syncBodyScrollLock()', 1)[1].split('function openActivityDrawer', 1)[0]
+    assert 'activityBackdrop' not in scroll_lock
     assert '.tracking-audit-entry {' in tracking_css
 
 
