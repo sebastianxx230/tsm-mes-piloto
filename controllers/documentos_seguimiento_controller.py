@@ -24,6 +24,10 @@ from models.catalogo_ot import CatalogoOT
 from models.documento_seguimiento import DocumentoSeguimiento
 from models.produccion import BitacoraOT
 from utils.auth import roles_required
+from utils.tracking_schema import (
+    TrackingSchemaError,
+    ensure_tracking_storage_schema,
+)
 
 
 documentos_seguimiento_bp = Blueprint(
@@ -310,6 +314,7 @@ def _document_payload(document):
 
 
 def _get_selected_documents(ot_id):
+    ensure_tracking_storage_schema()
     documents = DocumentoSeguimiento.query.filter_by(ot_id=ot_id).all()
     by_category = {document.categoria: document for document in documents}
     return {
@@ -323,12 +328,28 @@ def _get_selected_documents(ot_id):
 )
 @login_required
 def listar_documentos(ot_id):
-    if db.session.get(CatalogoOT, ot_id) is None:
-        return _error('La OT no existe.', 404)
-    return jsonify({
-        'success': True,
-        'documents': _get_selected_documents(ot_id),
-    })
+    try:
+        if db.session.get(CatalogoOT, ot_id) is None:
+            return _error('La OT no existe.', 404)
+        return jsonify({
+            'success': True,
+            'documents': _get_selected_documents(ot_id),
+        })
+    except TrackingSchemaError:
+        db.session.rollback()
+        return _error(
+            'No fue posible preparar el almacenamiento de documentos. '
+            'Vuelve a intentarlo en un momento.',
+            503,
+        )
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_documents_list_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': ot_id},
+        )
+        return _error('No fue posible consultar los documentos publicados.', 500)
 
 
 @documentos_seguimiento_bp.get(
@@ -342,7 +363,19 @@ def listar_candidatos(ot_id, category):
     except ValueError as error:
         return _error(str(error), 404)
 
-    ot = db.session.get(CatalogoOT, ot_id)
+    try:
+        ot = db.session.get(CatalogoOT, ot_id)
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_document_ot_lookup_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': ot_id, 'category': category},
+        )
+        return _error(
+            'No fue posible consultar la OT antes de listar sus archivos.',
+            500,
+        )
     if ot is None:
         return _error('La OT no existe.', 404)
 
@@ -477,7 +510,19 @@ def guardar_documento(ot_id, category):
     except ValueError as error:
         return _error(str(error), 404)
 
-    ot = db.session.get(CatalogoOT, ot_id)
+    try:
+        ot = db.session.get(CatalogoOT, ot_id)
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_document_save_ot_lookup_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': ot_id, 'category': category},
+        )
+        return _error(
+            'No fue posible consultar la OT antes de guardar el documento.',
+            500,
+        )
     if ot is None:
         return _error('La OT no existe.', 404)
 
@@ -487,10 +532,27 @@ def guardar_documento(ot_id, category):
 
     raw_file_id = payload.get('file_id')
     file_id = str(raw_file_id or '').strip()
-    selected = DocumentoSeguimiento.query.filter_by(
-        ot_id=ot_id,
-        categoria=category,
-    ).one_or_none()
+    try:
+        ensure_tracking_storage_schema()
+        selected = DocumentoSeguimiento.query.filter_by(
+            ot_id=ot_id,
+            categoria=category,
+        ).one_or_none()
+    except TrackingSchemaError:
+        db.session.rollback()
+        return _error(
+            'No fue posible preparar el almacenamiento de documentos. '
+            'Vuelve a intentarlo en un momento.',
+            503,
+        )
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_document_lookup_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': ot_id, 'category': category},
+        )
+        return _error('No fue posible consultar el documento publicado.', 500)
 
     if not file_id:
         if selected is not None:
@@ -560,10 +622,11 @@ def guardar_documento(ot_id, category):
             'success': True,
             'document': _document_payload(selected),
         })
-    except Exception:
+    except Exception as error:
         db.session.rollback()
         current_app.logger.exception(
-            'tracking_document_save_failed',
+            'tracking_document_save_failed exception_type=%s',
+            type(error).__name__,
             extra={'ot_id': ot_id, 'category': category},
         )
         return _error('No fue posible guardar el archivo seleccionado.', 500)

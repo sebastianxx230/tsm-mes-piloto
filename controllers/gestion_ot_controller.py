@@ -22,6 +22,10 @@ from utils.production_metrics import (
     process_settings,
     quantity_weighted_average,
 )
+from utils.tracking_schema import (
+    TrackingSchemaError,
+    ensure_tracking_storage_schema,
+)
 
 gestion_ot_bp = Blueprint('gestion_ot_bp', __name__, template_folder='../templates')
 
@@ -507,7 +511,28 @@ def subir_foto_seguimiento(id):
 @login_required
 @roles_required('admin')
 def guardar_fotos_seguimiento(id):
-    ot = db.session.get(CatalogoOT, id)
+    try:
+        ensure_tracking_storage_schema()
+        ot = db.session.get(CatalogoOT, id)
+    except TrackingSchemaError:
+        db.session.rollback()
+        return _validation_error(
+            'No fue posible preparar el almacenamiento de fotografías. '
+            'Vuelve a intentarlo en un momento.',
+            503,
+        )
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_photo_lookup_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': id},
+        )
+        return _validation_error(
+            'No fue posible consultar la OT antes de guardar las fotografías.',
+            500,
+        )
+
     if ot is None or ot.archivado:
         return _validation_error('La OT no existe.', 404)
 
@@ -586,9 +611,13 @@ def guardar_fotos_seguimiento(id):
             'success': True,
             'photos': [_tracking_photo_dict(photo) for photo in saved_photos],
         })
-    except Exception:
+    except Exception as error:
         db.session.rollback()
-        current_app.logger.exception('tracking_photos_save_failed', extra={'ot_id': id})
+        current_app.logger.exception(
+            'tracking_photos_save_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': id},
+        )
         return jsonify({
             'success': False,
             'error': 'No fue posible guardar las fotografías de seguimiento.',
@@ -766,6 +795,7 @@ def _tracking_process_breakdown(components, active_processes, weights):
 
 
 def _build_tracking_summary(ot_id):
+    ensure_tracking_storage_schema()
     work_order = db.session.get(CatalogoOT, ot_id)
     if work_order is None or work_order.archivado:
         raise ValueError('La OT no existe.')

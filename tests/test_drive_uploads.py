@@ -2,6 +2,8 @@ import io
 
 import controllers.documentos_seguimiento_controller as document_controller
 import controllers.reporte_fotografico_controller as drive_controller
+from db_config import db
+from models.documento_seguimiento import DocumentoSeguimiento
 
 
 def test_2026_drive_folder_uses_new_prefix_with_legacy_fallback(monkeypatch):
@@ -115,6 +117,55 @@ def test_admin_uploads_plan_to_canonical_drive_folder(
     assert uploaded['folder_id'] == 'plans-folder'
     assert uploaded['filename'] == 'plano-principal.pdf'
     assert uploaded['mime_type'] == 'application/pdf'
+
+
+def test_admin_publishes_uploaded_document(
+    app,
+    client,
+    login,
+    ids,
+    monkeypatch,
+):
+    candidate = {
+        'id': 'uploaded-document',
+        'name': '2026-0098_HojadeCorte.pdf',
+        'mime_type': 'application/pdf',
+        'size': 1_572_864,
+        'modified_time': '2026-08-17T18:00:00Z',
+        'previewable': True,
+        'folder_id': 'documents-folder',
+        'folder_name': 'DOCUMENTOS',
+        'location_label': 'DOCUMENTOS',
+    }
+    monkeypatch.setattr(document_controller, 'get_drive_service', lambda: object())
+    monkeypatch.setattr(
+        document_controller,
+        '_list_candidates_for_ot',
+        lambda _service, _ot_code, _category: {
+            'folder_found': True,
+            'files': [candidate],
+        },
+    )
+    login('admin')
+
+    response = client.put(
+        f'/api/seguimiento/{ids["ot"]}/documentos/otros',
+        json={'file_id': candidate['id']},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['success'] is True
+    assert payload['document']['name'] == candidate['name']
+    assert payload['document']['folder_name'] == 'DOCUMENTOS'
+
+    with app.app_context():
+        saved = DocumentoSeguimiento.query.filter_by(
+            ot_id=ids['ot'],
+            categoria='otros',
+        ).one()
+        assert saved.drive_file_id == candidate['id']
+        assert saved.actualizado_por_id == ids['users']['admin']
 
 
 def test_admin_uploads_photo_to_fotografias(
