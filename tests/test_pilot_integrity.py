@@ -107,3 +107,40 @@ def test_tracking_progress_is_weighted_by_piece_quantity(app, ids):
         assert hab['progress'] == 10.0
         assert tracking['overall_progress'] == 1.4
         assert tracking['unit_count'] == 100
+
+
+def test_tracking_lot_exposes_exact_progress_by_process(app, ids):
+    with app.app_context():
+        component = db.session.get(ComponenteOT, ids['component'])
+        component.hab_real = 5
+        component.arm_real = 10
+        db.session.commit()
+
+        tracking = _build_tracking_summary(ids['ot'])
+        lot = tracking['lots'][0]
+        processes = {process['key']: process for process in lot['processes']}
+
+        assert lot['status'] == 'En proceso'
+        assert lot['in_progress_count'] == 1
+        assert lot['pending_count'] == 0
+
+        assert processes['hab'] == {
+            'key': 'hab',
+            'name': 'Habilitado',
+            'progress': 50.0,
+            'status': 'En proceso',
+            'accent_class': 'tracking-stage-blue',
+            'active': True,
+            'weight': 12,
+            'advanced_units': 5,
+            'total_units': 10,
+            'completed_count': 0,
+            'in_progress_count': 1,
+            'pending_count': 0,
+            'applicable_count': 1,
+        }
+        assert processes['arm']['progress'] == 100.0
+        assert processes['arm']['status'] == 'Completado'
+        assert processes['arm']['completed_count'] == 1
+        assert processes['are']['active'] is False
+        assert processes['are']['status'] == 'No aplica'

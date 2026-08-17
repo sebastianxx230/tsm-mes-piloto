@@ -551,6 +551,68 @@ def _tracking_audit_dict(event):
     return data
 
 
+def _tracking_process_breakdown(components, active_processes, weights):
+    """Build the exact per-process state used by each tracking lot."""
+    breakdown = []
+    for key, name, field, _, accent_class in TRACKING_PROCESSES:
+        is_active = bool(active_processes.get(key, False))
+        ratios = []
+        advanced_units = 0.0
+        total_units = 0
+        completed_count = 0
+        in_progress_count = 0
+        pending_count = 0
+
+        for component in components:
+            quantity = max(int(component.cantidad or 0), 0)
+            ratio = _clamped_ratio(getattr(component, field), quantity)
+            if ratio is None:
+                continue
+
+            ratios.append((ratio * 100.0, quantity))
+            total_units += quantity
+            advanced_units += ratio * quantity
+            if ratio >= 0.9995:
+                completed_count += 1
+            elif ratio > 0:
+                in_progress_count += 1
+            else:
+                pending_count += 1
+
+        progress = round(quantity_weighted_average(ratios), 1) if ratios and is_active else 0.0
+        if not is_active:
+            status = 'No aplica'
+        elif not ratios:
+            status = 'Sin datos'
+        elif progress >= 99.95:
+            status = 'Completado'
+        elif progress > 0:
+            status = 'En proceso'
+        else:
+            status = 'Pendiente'
+
+        rounded_advanced_units = round(advanced_units, 1)
+        if rounded_advanced_units.is_integer():
+            rounded_advanced_units = int(rounded_advanced_units)
+
+        breakdown.append({
+            'key': key,
+            'name': name,
+            'progress': progress,
+            'status': status,
+            'accent_class': accent_class,
+            'active': is_active,
+            'weight': weights.get(key, 0),
+            'advanced_units': rounded_advanced_units,
+            'total_units': total_units,
+            'completed_count': completed_count,
+            'in_progress_count': in_progress_count,
+            'pending_count': pending_count,
+            'applicable_count': len(ratios),
+        })
+    return breakdown
+
+
 def _build_tracking_summary(ot_id):
     work_order = db.session.get(CatalogoOT, ot_id)
     if work_order is None or work_order.archivado:
@@ -618,15 +680,36 @@ def _build_tracking_summary(ot_id):
                 })
                 element_detail['process_keys'].add(process_key)
 
+        lot_progress = round(
+            quantity_weighted_average(progress_with_quantity), 1
+        ) if component_progress else 0.0
+        completed_count = sum(progress >= 99.95 for progress in component_progress)
+        in_progress_count = sum(0 < progress < 99.95 for progress in component_progress)
+        pending_count = sum(progress <= 0 for progress in component_progress)
+        if not component_progress:
+            lot_status = 'Sin datos'
+        elif completed_count == len(component_progress):
+            lot_status = 'Completado'
+        elif lot_progress > 0:
+            lot_status = 'En proceso'
+        else:
+            lot_status = 'Pendiente'
+
         lots.append({
             'id': packing_list.id,
             'name': packing_list.nombre,
-            'progress': round(
-                quantity_weighted_average(progress_with_quantity), 1
-            ) if component_progress else 0.0,
+            'progress': lot_progress,
+            'status': lot_status,
             'component_count': len(fabrication),
             'unit_count': sum(max(component.cantidad or 0, 0) for component in fabrication),
-            'completed_count': sum(progress >= 99.95 for progress in component_progress),
+            'completed_count': completed_count,
+            'in_progress_count': in_progress_count,
+            'pending_count': pending_count,
+            'processes': _tracking_process_breakdown(
+                fabrication,
+                active_processes,
+                weights,
+            ),
         })
 
     process_names = {key: name for key, name, _, _, _ in TRACKING_PROCESSES}

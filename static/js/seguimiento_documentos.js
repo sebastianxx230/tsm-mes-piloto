@@ -5,7 +5,6 @@
     const categoryMeta = {
         planos: {
             view: 'plans',
-            hash: '#planos',
             title: 'Planos',
             singular: 'plano',
             listId: 'tracking-plans-list',
@@ -13,7 +12,6 @@
         },
         otros: {
             view: 'documents',
-            hash: '#otros-documentos',
             title: 'Otros documentos',
             singular: 'documento',
             listId: 'tracking-documents-list',
@@ -120,48 +118,6 @@
         return name;
     }
 
-    function selectDocumentView(targetView, updateHash = true) {
-        if (!['plans', 'documents'].includes(targetView)) return;
-
-        document.querySelectorAll('[data-tracking-view]').forEach((tab) => {
-            const active = tab.dataset.trackingView === targetView;
-            tab.classList.toggle('is-active', active);
-            tab.setAttribute('aria-selected', active ? 'true' : 'false');
-        });
-        document.querySelectorAll('[data-tracking-panel]').forEach((panel) => {
-            const active = panel.dataset.trackingPanel === targetView;
-            panel.classList.toggle('is-active', active);
-            panel.hidden = !active;
-        });
-
-        if (updateHash) {
-            const category = targetView === 'plans' ? 'planos' : 'otros';
-            window.history.replaceState(
-                null,
-                '',
-                `${window.location.pathname}${window.location.search}${categoryMeta[category].hash}`,
-            );
-        }
-    }
-
-    function setupDocumentTabs() {
-        document.querySelectorAll(
-            '[data-tracking-view="plans"], [data-tracking-view="documents"]',
-        ).forEach((tab) => {
-            tab.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                selectDocumentView(tab.dataset.trackingView);
-            }, true);
-        });
-
-        if (window.location.hash === '#planos') {
-            selectDocumentView('plans', false);
-        } else if (window.location.hash === '#otros-documentos') {
-            selectDocumentView('documents', false);
-        }
-    }
-
     function emptyDocumentState(category) {
         const meta = categoryMeta[category];
         const wrapper = createElement('div', 'tracking-document-empty');
@@ -177,7 +133,7 @@
                 'p',
                 '',
                 config.canManageDocuments
-                    ? `Selecciona el archivo que se mostrará en ${meta.title}.`
+                    ? `Usa Gestionar para publicar el archivo que se mostrará en ${meta.title}.`
                     : 'El archivo aparecerá aquí cuando sea publicado.',
             ),
         );
@@ -216,15 +172,14 @@
         if (lastFocusedElement instanceof HTMLElement) lastFocusedElement.focus();
     }
 
-    function updateManageButton(category, documentData) {
+    function updateManageButton(category) {
         const button = document.querySelector(
             `[data-open-document-manager="${category}"]`,
         );
         if (!button) return;
-        const meta = categoryMeta[category];
-        button.textContent = documentData
-            ? `Cambiar ${meta.singular}`
-            : `Seleccionar ${meta.singular}`;
+        button.textContent = category === 'planos'
+            ? 'Gestionar plano'
+            : 'Gestionar documentos';
     }
 
     function renderDocument(category, documentData) {
@@ -233,7 +188,7 @@
         if (!container) return;
         container.replaceChildren();
         setText(meta.countId, documentData ? 1 : 0);
-        updateManageButton(category, documentData);
+        updateManageButton(category);
 
         if (!documentData) {
             container.append(emptyDocumentState(category));
@@ -515,7 +470,7 @@
             selectedDocuments[category] = payload.document || null;
             renderDocument(category, selectedDocuments[category]);
             closeDocumentManager();
-            selectDocumentView(categoryMeta[category].view);
+            window.TrackingWorkspace?.select(categoryMeta[category].view);
         } catch (error) {
             setManagerState(error.message || 'No se pudo guardar la selección.', 'error');
             if (saveButton) saveButton.disabled = !selectedCandidateId;
@@ -579,7 +534,6 @@
     }, true);
 
     document.addEventListener('DOMContentLoaded', () => {
-        setupDocumentTabs();
         setupDocumentManager();
         setupDocumentViewer();
         loadDocuments();

@@ -23,6 +23,7 @@
     let availableTrackingPhotos = [];
     let selectedTrackingPhotoIds = new Set();
     let openPersonIndex = null;
+    let openLotId = null;
 
     function element(tagName, className = '', text) {
         const node = document.createElement(tagName);
@@ -205,7 +206,10 @@
         setText('tracking-progress-count', toNumber(data.in_progress_count));
         setText('tracking-pending-count', toNumber(data.pending_count));
         setText('tracking-lot-note', `${lotCount} registrado${lotCount === 1 ? '' : 's'}`);
-        setText('tracking-personnel-note', `${personnelCount} persona${personnelCount === 1 ? '' : 's'}`);
+        setText(
+            'tracking-personnel-note',
+            `${personnelCount} persona${personnelCount === 1 ? '' : 's'} vinculada${personnelCount === 1 ? '' : 's'} a la producción.`,
+        );
         setText('tracking-lot-summary-label', `${plural(lotCount, 'Lista', 'Listas')} de producción`);
 
         setProgressWidth('tracking-overall-bar', overallProgress);
@@ -249,12 +253,85 @@
         });
     }
 
+    function formatQuantity(value) {
+        const quantity = toNumber(value);
+        return Number.isInteger(quantity) ? String(quantity) : quantity.toFixed(1);
+    }
+
+    function createProgressBar(progress, label, large = false) {
+        const progressBar = element(
+            'div',
+            `tracking-progress${large ? ' tracking-progress-large' : ''}`,
+        );
+        progressBar.setAttribute('role', 'progressbar');
+        progressBar.setAttribute('aria-label', label);
+        progressBar.setAttribute('aria-valuenow', String(progress));
+        progressBar.setAttribute('aria-valuemin', '0');
+        progressBar.setAttribute('aria-valuemax', '100');
+        const fill = element('span');
+        fill.style.width = `${progress}%`;
+        progressBar.append(fill);
+        return progressBar;
+    }
+
+    function createLotProcess(process, lotName) {
+        const progress = clampProgress(process.progress);
+        const article = element('article', 'tracking-lot-process');
+        if (!process.active) article.classList.add('is-inactive');
+        if (process.status === 'Completado') article.classList.add('is-complete');
+        if (process.status === 'En proceso') article.classList.add('is-progress');
+
+        const top = element('div', 'tracking-lot-process-top');
+        const copy = element('div');
+        copy.append(
+            element('strong', '', process.name || 'Proceso'),
+            element('span', '', process.status || 'Sin datos'),
+        );
+        top.append(copy, element('b', '', formatProgress(progress)));
+
+        const applicableCount = toNumber(process.applicable_count);
+        let detailText;
+        if (!process.active) {
+            detailText = 'Proceso no habilitado para esta OT.';
+        } else if (!applicableCount) {
+            detailText = 'Sin elementos aplicables en este lote.';
+        } else {
+            detailText = [
+                `${formatQuantity(process.advanced_units)} de ${formatQuantity(process.total_units)} unidades`,
+                `${toNumber(process.completed_count)} completos`,
+                `${toNumber(process.in_progress_count)} en proceso`,
+                `${toNumber(process.pending_count)} pendientes`,
+            ].join(' · ');
+        }
+
+        article.append(
+            top,
+            createProgressBar(progress, `${process.name || 'Proceso'} en ${lotName}`),
+            element('p', '', detailText),
+        );
+        return article;
+    }
+
+    function setLotExpanded(article, expanded) {
+        if (!article) return;
+        const toggle = article.querySelector('[data-lot-toggle]');
+        const detail = article.querySelector('.tracking-lot-detail');
+        const label = article.querySelector('[data-lot-toggle-label]');
+        article.classList.toggle('is-open', expanded);
+        if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (detail) detail.hidden = !expanded;
+        if (label) label.textContent = expanded ? 'Ocultar detalle' : 'Ver detalle';
+    }
+
     function renderLots(lots) {
         const container = document.getElementById('tracking-lot-list');
         if (!container) return;
 
         const safeLots = toArray(lots);
         const fragment = document.createDocumentFragment();
+        if (openLotId && !safeLots.some((lot) => String(lot.id) === openLotId)) {
+            openLotId = null;
+        }
 
         if (!safeLots.length) {
             fragment.append(createEmptyState(
@@ -269,15 +346,25 @@
             const elementCount = toNumber(lot.component_count);
             const unitCount = toNumber(lot.unit_count);
             const completedCount = toNumber(lot.completed_count);
+            const inProgressCount = toNumber(lot.in_progress_count);
+            const pendingCount = toNumber(lot.pending_count);
             const progress = clampProgress(lot.progress);
+            const lotId = String(lot.id ?? '');
+            const detailId = `tracking-lot-detail-${lotId || Math.random().toString(36).slice(2)}`;
+            const isOpen = Boolean(lotId) && openLotId === lotId;
 
             const article = element('article', 'tracking-lot');
-            const content = element('div', 'tracking-lot-content');
+            article.dataset.lotId = lotId;
+            article.classList.toggle('is-open', isOpen);
+            const summary = element('button', 'tracking-lot-summary');
+            summary.type = 'button';
+            summary.dataset.lotToggle = '';
+            summary.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            summary.setAttribute('aria-controls', detailId);
             const top = element('div', 'tracking-lot-top');
             const name = element('div', 'tracking-lot-name');
-            const copy = element('div');
 
-            copy.append(
+            name.append(
                 element('h3', '', lotName),
                 element(
                     'p',
@@ -286,27 +373,75 @@
                 ),
             );
 
-            name.append(copy);
-            top.append(name, element('strong', '', formatProgress(progress)));
+            const result = element('div', 'tracking-lot-result');
+            result.append(
+                element('span', 'tracking-status-pill', lot.status || 'Pendiente'),
+                element('strong', '', formatProgress(progress)),
+            );
+            top.append(name, result);
 
-            const progressBar = element('div', 'tracking-progress tracking-progress-large');
-            progressBar.setAttribute('role', 'progressbar');
-            progressBar.setAttribute('aria-label', `Avance de ${lotName}`);
-            progressBar.setAttribute('aria-valuenow', String(progress));
-            progressBar.setAttribute('aria-valuemin', '0');
-            progressBar.setAttribute('aria-valuemax', '100');
+            const foot = element('div', 'tracking-lot-foot');
+            foot.append(element(
+                'span',
+                '',
+                `${completedCount} completos · ${inProgressCount} en proceso · ${pendingCount} pendientes`,
+            ));
+            const disclosure = element('span', 'tracking-lot-disclosure');
+            const disclosureLabel = element(
+                'span',
+                '',
+                isOpen ? 'Ocultar detalle' : 'Ver detalle',
+            );
+            disclosureLabel.dataset.lotToggleLabel = '';
+            const chevron = element('i');
+            chevron.setAttribute('aria-hidden', 'true');
+            disclosure.append(disclosureLabel, chevron);
+            foot.append(disclosure);
 
-            const fill = element('span');
-            fill.style.width = `${progress}%`;
-            progressBar.append(fill);
+            summary.append(
+                top,
+                createProgressBar(progress, `Avance de ${lotName}`, true),
+                foot,
+            );
 
-            const completedLabel = `${completedCount} de ${elementCount} ${plural(elementCount, 'elemento completado', 'elementos completados')}`;
-            content.append(top, progressBar, element('p', 'tracking-lot-foot', completedLabel));
-            article.append(content);
+            const detail = element('section', 'tracking-lot-detail');
+            detail.id = detailId;
+            detail.hidden = !isOpen;
+            detail.setAttribute('aria-label', `Detalle de ${lotName}`);
+            const detailHeading = element('header', 'tracking-lot-detail-heading');
+            const detailCopy = element('div');
+            detailCopy.append(
+                element('strong', '', 'Avance por proceso'),
+                element('span', '', 'Las cantidades corresponden únicamente a este lote.'),
+            );
+            detailHeading.append(detailCopy);
+            const processGrid = element('div', 'tracking-lot-process-grid');
+            toArray(lot.processes).forEach((process) => {
+                processGrid.append(createLotProcess(process, lotName));
+            });
+            detail.append(detailHeading, processGrid);
+            article.append(summary, detail);
             fragment.append(article);
         });
 
         container.replaceChildren(fragment);
+    }
+
+    function setupLotDetails() {
+        const container = document.getElementById('tracking-lot-list');
+        if (!container) return;
+        container.addEventListener('click', (event) => {
+            const toggle = event.target.closest('[data-lot-toggle]');
+            if (!toggle || !container.contains(toggle)) return;
+            const article = toggle.closest('.tracking-lot');
+            if (!article) return;
+            const shouldOpen = toggle.getAttribute('aria-expanded') !== 'true';
+            container.querySelectorAll('.tracking-lot.is-open').forEach((openArticle) => {
+                if (openArticle !== article) setLotExpanded(openArticle, false);
+            });
+            setLotExpanded(article, shouldOpen);
+            openLotId = shouldOpen ? article.dataset.lotId : null;
+        });
     }
 
     function personElementSource(person) {
@@ -606,8 +741,21 @@
         if (input) input.addEventListener('input', applyPersonnelFilter);
     }
 
+    const trackingViewHashes = {
+        lots: '',
+        personnel: '#personal',
+        photos: '#fotos',
+        plans: '#planos',
+        documents: '#otros-documentos',
+    };
+
+    function trackingViewFromHash() {
+        return Object.entries(trackingViewHashes)
+            .find(([, hash]) => hash && hash === window.location.hash)?.[0] || 'lots';
+    }
+
     function selectTrackingView(target, updateHash = true) {
-        const validTarget = ['lots', 'personnel', 'photos'].includes(target)
+        const validTarget = Object.prototype.hasOwnProperty.call(trackingViewHashes, target)
             ? target
             : 'lots';
 
@@ -624,7 +772,7 @@
         });
 
         if (updateHash) {
-            const hash = validTarget === 'photos' ? '#fotos' : '';
+            const hash = trackingViewHashes[validTarget];
             window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
         }
     }
@@ -634,7 +782,8 @@
             tab.addEventListener('click', () => selectTrackingView(tab.dataset.trackingView));
         });
 
-        selectTrackingView(window.location.hash === '#fotos' ? 'photos' : 'lots', false);
+        selectTrackingView(trackingViewFromHash(), false);
+        window.TrackingWorkspace = Object.freeze({ select: selectTrackingView });
     }
 
     function selectActivityTab(target) {
@@ -1124,6 +1273,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         setupTrackingWorkspace();
+        setupLotDetails();
         setupPersonnelSearch();
         setupActivityTabs();
         setupActivityDrawer();

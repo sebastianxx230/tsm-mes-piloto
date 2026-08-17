@@ -1322,3 +1322,149 @@ body.tracking-document-modal-open {
         height: 44px;
     }
 }
+
+/* Documentos 2.0: comparte la misma cabecera y superficie del workspace. */
+.tracking-documents-heading {
+    min-height: 82px;
+    align-items: center;
+    justify-content: space-between;
+    flex-direction: row;
+    gap: 20px;
+    padding: 15px 18px;
+    text-align: left;
+}
+
+.tracking-documents-heading .tracking-workspace-copy {
+    width: auto;
+    margin: 0;
+}
+
+.tracking-document-manage {
+    min-width: 0;
+    min-height: 36px;
+    margin: 0;
+    padding: 0 13px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #334155;
+    box-shadow: none;
+    font-size: 9.5px;
+    font-weight: 850;
+}
+
+.tracking-document-manage:hover,
+.tracking-document-manage:focus-visible {
+    border-color: #94a3b8;
+    background: #f8fafc;
+    color: #172033;
+    box-shadow: none;
+}
+
+.tracking-document-list {
+    display: flex;
+    width: 100%;
+    min-height: 220px;
+    align-items: flex-start;
+    justify-content: flex-start;
+    margin: 0;
+    padding: 14px;
+    background: #f7f9fc;
+}
+
+.tracking-document-empty {
+    width: 100%;
+    min-height: 192px;
+    margin: 0;
+    padding: 20px;
+    border: 1px dashed #d8e1eb;
+    border-radius: 7px;
+    background: #ffffff;
+}
+
+.tracking-document-empty strong {
+    color: #26364d;
+    font-size: 11px;
+}
+
+.tracking-document-empty p {
+    max-width: 520px;
+    margin-top: 7px;
+    color: #8491a3;
+    font-size: 9px;
+    line-height: 1.5;
+}
+
+.tracking-document-card {
+    display: grid;
+    width: min(360px, 100%);
+    min-height: 84px;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    margin: 0;
+    padding: 13px 14px;
+    border: 1px solid #d9e2ec;
+    border-radius: 7px;
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.035);
+}
+
+.tracking-document-card:hover,
+.tracking-document-card:focus-visible {
+    border-color: #aebfd2;
+    box-shadow: 0 5px 14px rgba(15, 23, 42, 0.06);
+}
+
+.tracking-document-type,
+.tracking-document-type.is-pdf {
+    width: 48px;
+    height: 48px;
+    border: 1px solid #d8e0e9;
+    border-radius: 6px;
+    background: #f5f7fa;
+    color: #46566b;
+    font-size: 8.5px;
+}
+
+.tracking-document-copy strong {
+    color: #1d2939;
+    font-size: 11px;
+}
+
+.tracking-document-copy small {
+    margin-top: 4px;
+    color: #718096;
+    font-size: 8.5px;
+}
+
+@media (max-width: 640px) {
+    .tracking-documents-heading {
+        min-height: 0;
+        align-items: stretch;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px;
+    }
+
+    .tracking-documents-heading .tracking-workspace-actions,
+    .tracking-document-manage {
+        width: 100%;
+    }
+
+    .tracking-document-list {
+        min-height: 190px;
+        padding: 10px;
+    }
+
+    .tracking-document-card {
+        width: 100%;
+        grid-template-columns: 44px minmax(0, 1fr);
+    }
+
+    .tracking-document-type,
+    .tracking-document-type.is-pdf {
+        width: 44px;
+        height: 44px;
+    }
+}

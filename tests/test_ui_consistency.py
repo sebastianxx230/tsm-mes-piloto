@@ -118,3 +118,22 @@ def test_tracking_workspace_has_no_decorative_material_icons():
     assert 'tracking-lot-icon material-symbols-rounded' not in tracking_script
     assert "'tracking-avatar', person.initials" not in tracking_script
     assert 'tracking-document-open-indicator material-symbols-rounded' not in document_script
+
+
+def test_tracking_workspace_uses_one_layout_and_expandable_lot_details():
+    tracking_template = read('templates/seguimiento.html')
+    tracking_script = read('static/js/seguimiento.js')
+    tracking_css = read('static/css/seguimiento.css')
+    document_css = read('static/css/seguimiento_documentos.css')
+
+    assert tracking_template.count('class="tracking-workspace-copy"') == 5
+    assert tracking_template.count('class="tracking-workspace-actions"') == 5
+    assert 'data-lot-toggle aria-expanded="false"' in tracking_template
+    assert 'class="tracking-lot-process-grid"' in tracking_template
+    assert 'Gestionar fotografías' in tracking_template
+    assert 'Gestionar plano' in tracking_template
+    assert 'Gestionar documentos' in tracking_template
+    assert 'const trackingViewHashes' in tracking_script
+    assert 'function setupLotDetails()' in tracking_script
+    assert 'Workspace 7.0: lenguaje visual único' in tracking_css
+    assert 'Documentos 2.0: comparte la misma cabecera' in document_css
