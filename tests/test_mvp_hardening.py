@@ -1,5 +1,7 @@
+import re
 from pathlib import Path
 
+import controllers.reporte_fotografico_controller as report_controller
 from app import _classify_database_error, _normalize_database_url
 from db_config import db
 from models.catalogo_ot import CatalogoOT
@@ -29,6 +31,71 @@ def test_readiness_alias_checks_database(client):
 
     assert response.status_code == 200
     assert response.get_json() == {'status': 'ok', 'database': 'available'}
+
+
+def test_https_csrf_keeps_request_logging_and_accepts_same_origin_referrer(
+    app,
+    client,
+    login,
+    ids,
+    monkeypatch,
+):
+    previous_enabled = app.config['WTF_CSRF_ENABLED']
+    previous_strict = app.config['WTF_CSRF_SSL_STRICT']
+    app.config.update(WTF_CSRF_ENABLED=True, WTF_CSRF_SSL_STRICT=True)
+    try:
+        login('admin')
+        page = client.get(
+            '/seguimiento/ot/2026-TEST',
+            base_url='https://localhost',
+        )
+        token_match = re.search(
+            r'<meta name="csrf-token" content="([^"]+)"',
+            page.get_data(as_text=True),
+        )
+        assert token_match is not None
+        csrf_token = token_match.group(1)
+
+        rejected = client.put(
+            f'/api/seguimiento/{ids["ot"]}/fotos',
+            json={'photos': []},
+            headers={'X-CSRFToken': csrf_token},
+            base_url='https://localhost',
+        )
+        assert rejected.status_code == 400
+        assert rejected.get_json()['code'] == 'csrf_expired'
+        assert rejected.headers['X-Request-ID']
+
+        monkeypatch.setattr(report_controller, 'get_drive_service', lambda: object())
+        monkeypatch.setattr(
+            report_controller,
+            'get_unique_images_for_ot',
+            lambda _service, _ot_code: (True, []),
+        )
+        accepted = client.put(
+            f'/api/seguimiento/{ids["ot"]}/fotos',
+            json={'photos': []},
+            headers={
+                'X-CSRFToken': csrf_token,
+                'Referer': 'https://localhost/seguimiento/ot/2026-TEST',
+            },
+            base_url='https://localhost',
+        )
+        assert accepted.status_code == 200
+
+        report_request = client.post(
+            '/reporte/generar',
+            data={'csrf_token': csrf_token, 'ot_id': ids['ot']},
+            headers={'Referer': 'https://localhost/reporte/seleccionar/1'},
+            base_url='https://localhost',
+        )
+        assert report_request.status_code == 400
+        assert 'No se seleccionaron imágenes' in report_request.get_data(as_text=True)
+    finally:
+        app.config.update(
+            WTF_CSRF_ENABLED=previous_enabled,
+            WTF_CSRF_SSL_STRICT=previous_strict,
+        )
 
 
 def test_secret_key_has_no_source_fallback():

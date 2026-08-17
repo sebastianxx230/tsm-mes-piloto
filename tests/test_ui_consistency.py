@@ -17,6 +17,17 @@ def test_material_symbols_load_before_tailwind_utilities():
     assert material_position < tailwind_position
 
 
+def test_mutating_pages_keep_same_origin_referrer_for_https_csrf():
+    tracking_template = read('templates/seguimiento.html')
+    report_template = read('templates/reporte_selector.html')
+
+    assert '<meta name="referrer" content="same-origin">' in tracking_template
+    assert '<meta name="referrer" content="same-origin">' in report_template
+    assert '<meta name="referrer" content="no-referrer">' not in tracking_template
+    assert '<meta name="referrer" content="no-referrer">' not in report_template
+    assert 'referrerpolicy="no-referrer"' in report_template
+
+
 def test_hidden_material_icons_cannot_override_visibility():
     base_css = read('static/css/base.css')
 
