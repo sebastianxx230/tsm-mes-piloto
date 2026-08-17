@@ -1,25 +1,33 @@
 ﻿import io
+import mimetypes
 import os
 import re
 import unicodedata
 from pathlib import Path
 
 import googleapiclient.http
+from googleapiclient.errors import HttpError
 from flask import Blueprint, current_app, jsonify, request, send_file, url_for
 from flask_login import current_user, login_required
+from werkzeug.utils import secure_filename
 
 from controllers.reporte_fotografico_controller import (
     _list_drive_files,
-    get_drive_folder_id,
+    ensure_ot_category_folder,
     get_drive_service,
     get_drive_subfolders,
-    get_parent_folder_by_ot,
+    get_ot_drive_folder,
+    upload_drive_file,
 )
 from db_config import db
 from models.catalogo_ot import CatalogoOT
 from models.documento_seguimiento import DocumentoSeguimiento
 from models.produccion import BitacoraOT
 from utils.auth import roles_required
+from utils.tracking_schema import (
+    TrackingSchemaError,
+    ensure_tracking_storage_schema,
+)
 
 
 documentos_seguimiento_bp = Blueprint(
@@ -32,9 +40,23 @@ MAX_DOCUMENT_BYTES = max(
     1024 * 1024,
     int(os.environ.get('MAX_TRACKING_DOCUMENT_BYTES', str(50 * 1024 * 1024))),
     )
+MAX_DOCUMENT_UPLOAD_BYTES = max(
+    512 * 1024,
+    min(
+        MAX_DOCUMENT_BYTES,
+        int(os.environ.get(
+            'MAX_TRACKING_DOCUMENT_UPLOAD_BYTES',
+            str(3 * 1024 * 1024),
+        )),
+    ),
+)
 IMAGE_EXTENSIONS = {
     '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff',
     '.heic', '.heif', '.svg', '.avif',
+}
+ALLOWED_DOCUMENT_UPLOAD_EXTENSIONS = {
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    '.dwg', '.dxf', '.txt', '.csv', '.zip', '.rar',
 }
 GOOGLE_EXPORTABLE_MIME_TYPES = {
     'application/vnd.google-apps.document',
@@ -47,18 +69,18 @@ CATEGORY_CONFIG = {
         'label': 'Planos',
         'env_name': 'DRIVE_PLANOS_FOLDER_NAME',
         'folder_names': (
+            'PLANOS',
             'PLANOS_PRODUCCION',
             'PLANOS DE PRODUCCION',
-            'PLANOS',
         ),
     },
     'otros': {
         'label': 'Otros documentos',
         'env_name': 'DRIVE_OTROS_DOCUMENTOS_FOLDER_NAME',
         'folder_names': (
+            'DOCUMENTOS',
             'OTROS_DOCUMENTOS',
             'OTROS DOCUMENTOS',
-            'DOCUMENTOS',
         ),
     },
 }
@@ -95,15 +117,7 @@ def _expected_folder_names(category):
 
 def _find_ot_folder(service, ot_code):
     """Localiza la carpeta de la OT dentro del contenedor anual configurado."""
-    parent_folder_id = get_parent_folder_by_ot(ot_code)
-    if not parent_folder_id:
-        return None, None
-
-    ot_folder_id = get_drive_folder_id(service, ot_code, parent_folder_id)
-    if not ot_folder_id:
-        return None, None
-
-    return ot_folder_id, str(ot_code).strip()
+    return get_ot_drive_folder(service, ot_code)
 
 
 def _matching_category_folders(service, ot_folder_id, category):
@@ -152,6 +166,34 @@ def _safe_size(value):
     return parsed if parsed >= 0 else None
 
 
+def _read_document_upload(file_storage):
+    original_name = Path(str(file_storage.filename or '')).name.strip()
+    extension = Path(original_name).suffix.lower()
+    if not original_name or extension not in ALLOWED_DOCUMENT_UPLOAD_EXTENSIONS:
+        raise ValueError(
+            'Sube un PDF, documento de Office, DWG, DXF, TXT, CSV, ZIP o RAR.'
+        )
+
+    safe_name = secure_filename(original_name)
+    if not safe_name:
+        raise ValueError('El nombre del archivo no es válido.')
+
+    content = file_storage.stream.read(MAX_DOCUMENT_UPLOAD_BYTES + 1)
+    if not content:
+        raise ValueError('El archivo está vacío.')
+    if len(content) > MAX_DOCUMENT_UPLOAD_BYTES:
+        raise OverflowError(
+            f'El archivo supera el límite de '
+            f'{MAX_DOCUMENT_UPLOAD_BYTES // (1024 * 1024)} MB.'
+        )
+
+    guessed_mime = mimetypes.guess_type(safe_name)[0]
+    mime_type = str(file_storage.mimetype or guessed_mime or '').strip()
+    if not mime_type or mime_type == 'application/octet-stream':
+        mime_type = guessed_mime or 'application/octet-stream'
+    return safe_name, mime_type, content
+
+
 def _list_documents_in_folder(service, folder_id):
     query = (
         f"'{folder_id}' in parents and "
@@ -166,12 +208,7 @@ def _list_documents_in_folder(service, folder_id):
 
 
 def _list_candidates_for_ot(service, ot_code, category):
-    """Lista documentos desde la raíz de la OT y su carpeta temática opcional.
-
-    La carpeta PLANOS/OTROS DOCUMENTOS ya no es obligatoria. Esto permite que el
-    administrador coloque el PDF directamente dentro de la carpeta de la OT,
-    igual que en el flujo fotográfico, y luego elija manualmente qué publicar.
-    """
+    """Lista la carpeta temática nueva y conserva la raíz como respaldo legado."""
     ot_folder_id, ot_folder_name = _find_ot_folder(service, ot_code)
     if not ot_folder_id:
         return {
@@ -189,18 +226,24 @@ def _list_candidates_for_ot(service, ot_code, category):
         ot_folder_id,
         category,
     )
-    source_folders = [
-        {
-            'id': ot_folder_id,
-            'name': ot_folder_name,
-            'location_label': 'Carpeta principal de la OT',
-        },
-    ]
-    source_folders.extend({
-                              'id': folder.get('id'),
-                              'name': folder.get('name'),
-                              'location_label': folder.get('name') or 'Subcarpeta',
-                          } for folder in category_folders if folder.get('id'))
+    if category_folders:
+        source_folders = [
+            {
+                'id': folder.get('id'),
+                'name': folder.get('name'),
+                'location_label': folder.get('name') or 'Subcarpeta',
+            }
+            for folder in category_folders
+            if folder.get('id')
+        ]
+    else:
+        source_folders = [
+            {
+                'id': ot_folder_id,
+                'name': ot_folder_name,
+                'location_label': 'Carpeta principal de la OT (estructura anterior)',
+            },
+        ]
 
     candidates = []
     seen_ids = set()
@@ -271,6 +314,7 @@ def _document_payload(document):
 
 
 def _get_selected_documents(ot_id):
+    ensure_tracking_storage_schema()
     documents = DocumentoSeguimiento.query.filter_by(ot_id=ot_id).all()
     by_category = {document.categoria: document for document in documents}
     return {
@@ -284,12 +328,28 @@ def _get_selected_documents(ot_id):
 )
 @login_required
 def listar_documentos(ot_id):
-    if db.session.get(CatalogoOT, ot_id) is None:
-        return _error('La OT no existe.', 404)
-    return jsonify({
-        'success': True,
-        'documents': _get_selected_documents(ot_id),
-    })
+    try:
+        if db.session.get(CatalogoOT, ot_id) is None:
+            return _error('La OT no existe.', 404)
+        return jsonify({
+            'success': True,
+            'documents': _get_selected_documents(ot_id),
+        })
+    except TrackingSchemaError:
+        db.session.rollback()
+        return _error(
+            'No fue posible preparar el almacenamiento de documentos. '
+            'Vuelve a intentarlo en un momento.',
+            503,
+        )
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_documents_list_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': ot_id},
+        )
+        return _error('No fue posible consultar los documentos publicados.', 500)
 
 
 @documentos_seguimiento_bp.get(
@@ -303,7 +363,19 @@ def listar_candidatos(ot_id, category):
     except ValueError as error:
         return _error(str(error), 404)
 
-    ot = db.session.get(CatalogoOT, ot_id)
+    try:
+        ot = db.session.get(CatalogoOT, ot_id)
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_document_ot_lookup_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': ot_id, 'category': category},
+        )
+        return _error(
+            'No fue posible consultar la OT antes de listar sus archivos.',
+            500,
+        )
     if ot is None:
         return _error('La OT no existe.', 404)
 
@@ -328,6 +400,105 @@ def listar_candidatos(ot_id, category):
         return _error('No fue posible consultar los archivos de Drive.', 502)
 
 
+@documentos_seguimiento_bp.post(
+    '/api/seguimiento/<int:ot_id>/documentos/<category>/subir'
+)
+@login_required
+@roles_required('admin')
+def subir_documento(ot_id, category):
+    try:
+        config = _category_config(category)
+    except ValueError as error:
+        return _error(str(error), 404)
+
+    ot = db.session.get(CatalogoOT, ot_id)
+    if ot is None or ot.archivado:
+        return _error('La OT no existe.', 404)
+
+    file_storage = request.files.get('file')
+    if file_storage is None:
+        return _error('Selecciona un archivo para subir.')
+
+    try:
+        filename, mime_type, content = _read_document_upload(file_storage)
+    except OverflowError as error:
+        return _error(str(error), 413)
+    except ValueError as error:
+        return _error(str(error))
+
+    service = get_drive_service()
+    if service is None:
+        return _error('No fue posible conectar con Google Drive.', 503)
+
+    try:
+        folder = ensure_ot_category_folder(
+            service,
+            str(ot.ot).strip(),
+            config['folder_names'][0],
+        )
+        uploaded = upload_drive_file(
+            service,
+            folder['category_folder_id'],
+            filename,
+            mime_type,
+            content,
+        )
+
+        try:
+            db.session.add(BitacoraOT(
+                ot_id=ot_id,
+                usuario_id=current_user.id,
+                usuario_nombre=getattr(current_user, 'nombre', 'Administrador'),
+                mensaje=(
+                    f'Subió {filename} a la carpeta '
+                    f'{folder["category_folder_name"]} de Google Drive.'
+                ),
+                tipo='audit',
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                'tracking_document_upload_audit_failed',
+                extra={'ot_id': ot_id, 'category': category},
+            )
+
+        return jsonify({
+            'success': True,
+            'file': {
+                'id': uploaded['id'],
+                'name': uploaded.get('name') or filename,
+                'mime_type': uploaded.get('mimeType') or mime_type,
+                'size': _safe_size(uploaded.get('size')) or len(content),
+                'modified_time': uploaded.get('modifiedTime'),
+                'previewable': _is_previewable(uploaded),
+                'folder_id': folder['category_folder_id'],
+                'folder_name': folder['category_folder_name'],
+                'location_label': folder['category_folder_name'],
+            },
+        }), 201
+    except HttpError as error:
+        status = int(getattr(getattr(error, 'resp', None), 'status', 0) or 0)
+        current_app.logger.warning(
+            'tracking_document_drive_upload_rejected',
+            extra={'ot_id': ot_id, 'category': category, 'status': status},
+        )
+        if status in {401, 403}:
+            return _error(
+                'La cuenta de servicio necesita permiso de Editor en la carpeta de Drive.',
+                403,
+            )
+        return _error('Google Drive rechazó la subida del archivo.', 502)
+    except ValueError as error:
+        return _error(str(error), 400)
+    except Exception:
+        current_app.logger.exception(
+            'tracking_document_upload_failed',
+            extra={'ot_id': ot_id, 'category': category},
+        )
+        return _error('No fue posible subir el archivo a Google Drive.', 502)
+
+
 @documentos_seguimiento_bp.put(
     '/api/seguimiento/<int:ot_id>/documentos/<category>'
 )
@@ -339,7 +510,19 @@ def guardar_documento(ot_id, category):
     except ValueError as error:
         return _error(str(error), 404)
 
-    ot = db.session.get(CatalogoOT, ot_id)
+    try:
+        ot = db.session.get(CatalogoOT, ot_id)
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_document_save_ot_lookup_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': ot_id, 'category': category},
+        )
+        return _error(
+            'No fue posible consultar la OT antes de guardar el documento.',
+            500,
+        )
     if ot is None:
         return _error('La OT no existe.', 404)
 
@@ -349,10 +532,27 @@ def guardar_documento(ot_id, category):
 
     raw_file_id = payload.get('file_id')
     file_id = str(raw_file_id or '').strip()
-    selected = DocumentoSeguimiento.query.filter_by(
-        ot_id=ot_id,
-        categoria=category,
-    ).one_or_none()
+    try:
+        ensure_tracking_storage_schema()
+        selected = DocumentoSeguimiento.query.filter_by(
+            ot_id=ot_id,
+            categoria=category,
+        ).one_or_none()
+    except TrackingSchemaError:
+        db.session.rollback()
+        return _error(
+            'No fue posible preparar el almacenamiento de documentos. '
+            'Vuelve a intentarlo en un momento.',
+            503,
+        )
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_document_lookup_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': ot_id, 'category': category},
+        )
+        return _error('No fue posible consultar el documento publicado.', 500)
 
     if not file_id:
         if selected is not None:
@@ -422,10 +622,11 @@ def guardar_documento(ot_id, category):
             'success': True,
             'document': _document_payload(selected),
         })
-    except Exception:
+    except Exception as error:
         db.session.rollback()
         current_app.logger.exception(
-            'tracking_document_save_failed',
+            'tracking_document_save_failed exception_type=%s',
+            type(error).__name__,
             extra={'ot_id': ot_id, 'category': category},
         )
         return _error('No fue posible guardar el archivo seleccionado.', 500)

@@ -17,6 +17,17 @@ def test_material_symbols_load_before_tailwind_utilities():
     assert material_position < tailwind_position
 
 
+def test_mutating_pages_keep_same_origin_referrer_for_https_csrf():
+    tracking_template = read('templates/seguimiento.html')
+    report_template = read('templates/reporte_selector.html')
+
+    assert '<meta name="referrer" content="same-origin">' in tracking_template
+    assert '<meta name="referrer" content="same-origin">' in report_template
+    assert '<meta name="referrer" content="no-referrer">' not in tracking_template
+    assert '<meta name="referrer" content="no-referrer">' not in report_template
+    assert 'referrerpolicy="no-referrer"' in report_template
+
+
 def test_hidden_material_icons_cannot_override_visibility():
     base_css = read('static/css/base.css')
 
@@ -65,6 +76,10 @@ def test_production_header_chat_and_matrix_share_stable_layout_contracts():
     assert 'Inicio de Mensajer' not in production_script
     assert 'coordinación operativa' not in production_script
     assert 'production-chat-message' in production_script
+    assert 'production-chat-avatar' in production_script
+    assert 'production-chat-avatar' in production_css
+    assert 'Mensajes 3.8: comparte el panel sobrio y estable de Seguimiento.' in production_css
+    assert 'height: min(570px, calc(100dvh - 104px));' in production_css
     assert 'background: transparent;' in production_css
     assert 'backdrop-filter: none;' in production_css
 
@@ -83,18 +98,33 @@ def test_production_header_chat_and_matrix_share_stable_layout_contracts():
 def test_messages_and_history_share_the_same_surface_components():
     tracking_template = read('templates/seguimiento.html')
     tracking_css = read('static/css/seguimiento.css')
+    tracking_script = read('static/js/seguimiento.js')
 
-    assert tracking_template.count('class="tracking-readonly-note"') == 2
+    assert tracking_template.count('class="tracking-readonly-note"') == 1
+    assert 'class="tracking-readonly-status"' in tracking_template
+    assert '>visibility</span>' not in tracking_template
     assert 'precision_manufacturing' not in tracking_template
-    assert '<h2 id="tracking-activity-title">Actividad de la OT</h2>' not in tracking_template
-    assert '<h2 id="tracking-activity-title">Mensajes e historial</h2>' in tracking_template
+    assert '<h2 id="tracking-activity-title">Mensajes e historial</h2>' not in tracking_template
+    assert '<h2 id="tracking-activity-title">OT {{ ot.ot }}</h2>' in tracking_template
+    assert 'aria-label="Mensajes e historial de la OT {{ ot.ot }}"' in tracking_template
     assert '.tracking-message-entry,' in tracking_css
     assert '.tracking-audit-entry,' in tracking_css
     assert 'Actividad compacta y coherente con la mensajeria de Produccion.' in tracking_css
     assert '.tracking-message-entry .tracking-activity-copy > p' in tracking_css
     assert '.tracking-message-entry.is-current-user {' in tracking_css
-    assert 'currentUserId' in read('static/js/seguimiento.js')
+    assert 'Mensajes 8.3: altura estable y burbujas ajustadas al contenido.' in tracking_css
+    assert 'width: fit-content;' in tracking_css
+    assert 'height: min(570px, calc(100dvh - 104px));' in tracking_css
+    assert 'class="tracking-chat-avatar"' not in tracking_template
+    assert 'currentUserId' in tracking_script
+    scroll_lock = tracking_script.split('function syncBodyScrollLock()', 1)[1].split('function openActivityDrawer', 1)[0]
+    assert 'activityBackdrop' not in scroll_lock
     assert '.tracking-audit-entry {' in tracking_css
+
+    back_position = tracking_template.index('<span>Volver al catálogo</span>')
+    activity_position = tracking_template.index('<span>Actividad</span>')
+    production_position = tracking_template.index('<span>Abrir producción</span>')
+    assert back_position < activity_position < production_position
 
 
 def test_empty_document_states_are_centered_in_the_panel():
@@ -118,3 +148,41 @@ def test_tracking_workspace_has_no_decorative_material_icons():
     assert 'tracking-lot-icon material-symbols-rounded' not in tracking_script
     assert "'tracking-avatar', person.initials" not in tracking_script
     assert 'tracking-document-open-indicator material-symbols-rounded' not in document_script
+
+
+def test_tracking_workspace_uses_one_layout_and_expandable_lot_details():
+    tracking_template = read('templates/seguimiento.html')
+    tracking_script = read('static/js/seguimiento.js')
+    tracking_css = read('static/css/seguimiento.css')
+    document_css = read('static/css/seguimiento_documentos.css')
+
+    assert tracking_template.count('class="tracking-workspace-copy"') == 5
+    assert tracking_template.count('class="tracking-workspace-actions"') == 5
+    assert 'data-lot-toggle aria-expanded="false"' in tracking_template
+    assert 'class="tracking-lot-process-grid"' in tracking_template
+    assert 'Gestionar fotografías' in tracking_template
+    assert 'Gestionar plano' in tracking_template
+    assert 'Gestionar documentos' in tracking_template
+    assert 'id="tracking-photo-upload"' in tracking_template
+    assert 'id="tracking-document-upload"' in tracking_template
+    assert 'uploadPhotoUrl' in tracking_template
+    assert 'uploadDocumentUrlTemplate' in tracking_template
+    assert 'function uploadTrackingPhotos(input)' in tracking_script
+    assert 'function uploadDocument(input)' in read('static/js/seguimiento_documentos.js')
+    assert 'const trackingViewHashes' in tracking_script
+    assert 'function setupLotDetails()' in tracking_script
+    assert 'Workspace 8.0: única fuente visual' in tracking_css
+    assert 'Documentos 2.0: comparte la misma cabecera' in document_css
+
+
+def test_tracking_workspace_styles_load_in_canonical_order_and_preview_decodes_images():
+    tracking_template = read('templates/seguimiento.html')
+    tracking_script = read('static/js/seguimiento.js')
+
+    document_css_position = tracking_template.index("css/seguimiento_documentos.css")
+    workspace_css_position = tracking_template.index("css/seguimiento.css")
+    assert document_css_position < workspace_css_position
+    assert 'Ver participación' in tracking_template
+    assert 'data-photo-preview-loading' in tracking_template
+    assert 'function preloadPhoto(url)' in tracking_script
+    assert "image.decoding = 'async';" in tracking_script

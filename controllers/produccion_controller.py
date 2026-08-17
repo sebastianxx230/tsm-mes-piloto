@@ -1,4 +1,7 @@
 import os
+import re
+import unicodedata
+from datetime import date
 
 from db_config import db
 from flask import Blueprint, current_app, jsonify, request
@@ -8,7 +11,14 @@ from sqlalchemy.exc import IntegrityError
 from utils.auth import roles_required
 
 from models.catalogo_ot import CatalogoOT
-from models.produccion import BitacoraOT, ComponenteOT, PackingList, utc_now
+from models.produccion import (
+    BitacoraOT,
+    ComponenteOT,
+    PackingList,
+    PersonalProduccion,
+    utc_now,
+)
+from utils.production_schema import ensure_production_storage_schema
 from utils.production_metrics import (
     normalize_active_processes,
     normalize_process_weights,
@@ -26,6 +36,7 @@ EDITABLE_COMPONENT_FIELDS = {
     'tipo',
     'estado_suministro',
     'operario',
+    'fecha_realizacion',
     'hab_real',
     'arm_real',
     'sol_real',
@@ -58,6 +69,7 @@ AUDIT_FIELD_LABELS = {
     'tipo': 'tipo',
     'estado_suministro': 'estado de suministro',
     'operario': 'personal asignado',
+    'fecha_realizacion': 'fecha de fabricación',
     'hab_real': 'avance habilitado',
     'arm_real': 'avance armado',
     'sol_real': 'avance soldado',
@@ -113,6 +125,11 @@ class ValidationError(ValueError):
     pass
 
 
+@produccion_bp.before_request
+def _prepare_production_schema():
+    ensure_production_storage_schema()
+
+
 def _get_json_object():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -156,6 +173,96 @@ def _coerce_text(value, field_name, maximum, required=False):
             f'El campo {field_name} supera el máximo de {maximum} caracteres.'
         )
     return parsed
+
+
+def _coerce_optional_date(value, field_name):
+    if value is None or value == '':
+        return None
+    if not isinstance(value, str):
+        raise ValidationError(f'El campo {field_name} debe ser una fecha.')
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        raise ValidationError(
+            f'El campo {field_name} debe tener formato AAAA-MM-DD.'
+        ) from None
+
+
+def _validate_real_period(start_value, end_value):
+    start_date = _coerce_optional_date(start_value, 'fecha_inicio_real')
+    end_date = _coerce_optional_date(end_value, 'fecha_termino_real')
+    if start_date and end_date and end_date < start_date:
+        raise ValidationError(
+            'La fecha real de término no puede ser anterior al inicio.'
+        )
+    return start_date, end_date
+
+
+def _personnel_key(value):
+    normalized = unicodedata.normalize('NFKD', str(value or ''))
+    without_accents = ''.join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    )
+    return re.sub(r'\s+', ' ', without_accents).strip().casefold()
+
+
+def _get_or_create_personnel(name):
+    clean_name = _coerce_text(name, 'nombre del personal', 120, required=True)
+    key = _personnel_key(clean_name)
+    if not key:
+        raise ValidationError('El nombre del personal no es válido.')
+
+    person = PersonalProduccion.query.filter_by(nombre_clave=key).first()
+    if person is None:
+        person = PersonalProduccion(
+            nombre=clean_name,
+            nombre_clave=key,
+        )
+        db.session.add(person)
+        db.session.flush()
+    return person
+
+
+def _canonicalize_personnel_assignments(raw_value):
+    raw_value = _coerce_text(raw_value, 'operario', 500)
+    if not raw_value:
+        return ''
+
+    canonical_segments = []
+    for raw_segment in raw_value.split('|'):
+        segment = raw_segment.strip()
+        if not segment:
+            continue
+        if ':' in segment:
+            process_key, raw_names = segment.split(':', 1)
+            process_key = process_key.strip().lower()
+        else:
+            process_key, raw_names = 'general', segment
+
+        names = []
+        seen = set()
+        for raw_name in re.split(r'[,;\n]+', raw_names):
+            raw_name = raw_name.strip()
+            if not raw_name:
+                continue
+            person = _get_or_create_personnel(raw_name)
+            if person.nombre_clave in seen:
+                continue
+            seen.add(person.nombre_clave)
+            names.append(person.nombre)
+        if names:
+            canonical_segments.append(
+                f'{process_key}:{", ".join(names)}'
+            )
+
+    canonical = '|'.join(canonical_segments)
+    if len(canonical) > 500:
+        raise ValidationError(
+            'La asignación de personal supera el máximo de 500 caracteres.'
+        )
+    return canonical
 
 
 def _packing_list_name(value):
@@ -228,7 +335,9 @@ def _validate_component_value(component, field_name, value):
     if field_name == 'longitud':
         return _coerce_text(value, field_name, 50)
     if field_name == 'operario':
-        return _coerce_text(value, field_name, 500)
+        return _canonicalize_personnel_assignments(value)
+    if field_name == 'fecha_realizacion':
+        return _coerce_optional_date(value, field_name)
     if field_name == 'cantidad':
         quantity = _coerce_int(value, field_name)
         current_progress = [
@@ -298,8 +407,9 @@ def _validate_import_component(component):
 
     def progress_value(source_name, target_name):
         minimum = 0 if target_name == 'des_real' else -1
+        default = 0 if target_name == 'des_real' else -1
         return _coerce_int(
-            component.get(source_name, 0),
+            component.get(source_name, default),
             target_name,
             minimum=minimum,
             maximum=quantity,
@@ -331,10 +441,12 @@ def _validate_import_component(component):
         ),
         'tipo': component_type,
         'estado_suministro': supply_state,
-        'operario': _coerce_text(
-            component.get('operario', ''),
-            'operario',
-            500,
+        'operario': _canonicalize_personnel_assignments(
+            component.get('operario', '')
+        ),
+        'fecha_realizacion': _coerce_optional_date(
+            component.get('fecha_realizacion'),
+            'fecha_realizacion',
         ),
         'hab_real': progress_value('hab', 'hab_real'),
         'arm_real': progress_value('arm', 'arm_real'),
@@ -369,6 +481,73 @@ def _version_headers(response, packing_list):
     return response
 
 
+@produccion_bp.get('/api/produccion/personal')
+@login_required
+def listar_personal_produccion():
+    personnel = (
+        PersonalProduccion.query.filter_by(activo=True)
+        .order_by(func.lower(PersonalProduccion.nombre).asc())
+        .all()
+    )
+    return jsonify({
+        'success': True,
+        'personal': [person.to_dict() for person in personnel],
+    })
+
+
+@produccion_bp.post('/api/produccion/personal')
+@login_required
+@roles_required('admin', 'editor')
+def crear_personal_produccion():
+    try:
+        data = _get_json_object()
+        name = _coerce_text(
+            data.get('nombre'),
+            'nombre del personal',
+            120,
+            required=True,
+        )
+        key = _personnel_key(name)
+        existing = PersonalProduccion.query.filter_by(nombre_clave=key).first()
+        if existing is not None:
+            if not existing.activo:
+                existing.activo = True
+                db.session.commit()
+            return jsonify({
+                'success': True,
+                'created': False,
+                'person': existing.to_dict(),
+            })
+
+        person = PersonalProduccion(nombre=name, nombre_clave=key)
+        db.session.add(person)
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'created': True,
+            'person': person.to_dict(),
+        }), 201
+    except ValidationError as error:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Esa persona ya está registrada.',
+        }), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            'production_personnel_create_failed',
+            extra={'user_id': current_user.get_id()},
+        )
+        return jsonify({
+            'success': False,
+            'error': 'No fue posible registrar a la persona.',
+        }), 500
+
+
 @produccion_bp.get('/api/produccion/packing_lists/<int:ot_id>')
 @login_required
 def obtener_pls(ot_id):
@@ -395,6 +574,10 @@ def crear_pl():
         data = _get_json_object()
         ot_id = _coerce_int(data.get('ot_id'), 'ot_id', minimum=1)
         name = _packing_list_name(data.get('nombre'))
+        real_start, real_end = _validate_real_period(
+            data.get('fecha_inicio_real'),
+            data.get('fecha_termino_real'),
+        )
 
         work_order = db.session.get(
             CatalogoOT,
@@ -422,6 +605,8 @@ def crear_pl():
             ot_id=ot_id,
             nombre=name,
             orden=next_order,
+            fecha_inicio_real=real_start,
+            fecha_termino_real=real_end,
         )
         db.session.add(new_packing_list)
         db.session.flush()
@@ -537,6 +722,83 @@ def renombrar_pl(pl_id):
         return jsonify({
             'success': False,
             'error': 'Ocurrió un error interno al renombrar la packing list.',
+        }), 500
+
+
+@produccion_bp.put('/api/produccion/packing_lists/<int:pl_id>/periodo')
+@login_required
+@roles_required('admin', 'editor')
+def actualizar_periodo_pl(pl_id):
+    try:
+        data = _get_json_object()
+        expected_version = _coerce_optional_int(
+            data.get('expected_version'),
+            'expected_version',
+            minimum=1,
+        )
+        if expected_version is None:
+            raise ValidationError(
+                'Actualiza la pantalla antes de modificar las fechas.'
+            )
+        real_start, real_end = _validate_real_period(
+            data.get('fecha_inicio_real'),
+            data.get('fecha_termino_real'),
+        )
+        packing_list = db.session.get(
+            PackingList,
+            pl_id,
+            with_for_update=True,
+        )
+        if packing_list is None or packing_list.archivado:
+            return jsonify({
+                'success': False,
+                'error': 'La packing list no existe.',
+            }), 404
+        if int(packing_list.version or 1) != expected_version:
+            db.session.rollback()
+            return jsonify({
+                'success': False,
+                'error': 'Otra persona modificó este lote. Actualiza la pantalla.',
+                'current_version': packing_list.version,
+            }), 409
+
+        packing_list.fecha_inicio_real = real_start
+        packing_list.fecha_termino_real = real_end
+        packing_list.incrementar_version()
+        db.session.add(BitacoraOT(
+            ot_id=packing_list.ot_id,
+            usuario_id=current_user.id,
+            usuario_nombre=getattr(
+                current_user,
+                'nombre',
+                f'Usuario {current_user.id}',
+            ),
+            mensaje=(
+                f'Actualizó las fechas históricas de {packing_list.nombre}: '
+                f'{real_start.strftime("%d/%m/%Y") if real_start else "sin inicio"} '
+                f'a {real_end.strftime("%d/%m/%Y") if real_end else "sin término"}.'
+            ),
+            tipo='audit',
+        ))
+        db.session.commit()
+        response = jsonify({
+            'success': True,
+            'pl': packing_list.to_dict(),
+            'version': packing_list.version,
+        })
+        return _version_headers(response, packing_list)
+    except ValidationError as error:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(error)}), 400
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            'packing_list_period_update_failed',
+            extra={'packing_list_id': pl_id},
+        )
+        return jsonify({
+            'success': False,
+            'error': 'No fue posible actualizar las fechas históricas del lote.',
         }), 500
 
 
@@ -676,6 +938,17 @@ def importar_excel():
             minimum=1,
         )
         components = data.get('componentes', [])
+        has_real_period = (
+            'fecha_inicio_real' in data
+            or 'fecha_termino_real' in data
+        )
+        if has_real_period:
+            real_start, real_end = _validate_real_period(
+                data.get('fecha_inicio_real'),
+                data.get('fecha_termino_real'),
+            )
+        else:
+            real_start = real_end = None
 
         if not isinstance(components, list) or not components:
             return jsonify({
@@ -745,6 +1018,9 @@ def importar_excel():
             for component in validated_components
         ])
 
+        if has_real_period:
+            packing_list.fecha_inicio_real = real_start
+            packing_list.fecha_termino_real = real_end
         packing_list.incrementar_version()
         db.session.add(BitacoraOT(
             ot_id=packing_list.ot_id,
@@ -778,6 +1054,7 @@ def importar_excel():
             'version': packing_list.version,
             'replaced_count': previous_count,
             'imported_count': len(validated_components),
+            'pl': packing_list.to_dict(),
         })
         return _version_headers(response, packing_list)
     except ValidationError as error:

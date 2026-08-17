@@ -23,6 +23,10 @@
     let availableTrackingPhotos = [];
     let selectedTrackingPhotoIds = new Set();
     let openPersonIndex = null;
+    let openLotId = null;
+    let photoPreviewToken = 0;
+    const decodedPhotoUrls = new Set();
+    const photoDecodePromises = new Map();
 
     function element(tagName, className = '', text) {
         const node = document.createElement(tagName);
@@ -205,7 +209,10 @@
         setText('tracking-progress-count', toNumber(data.in_progress_count));
         setText('tracking-pending-count', toNumber(data.pending_count));
         setText('tracking-lot-note', `${lotCount} registrado${lotCount === 1 ? '' : 's'}`);
-        setText('tracking-personnel-note', `${personnelCount} persona${personnelCount === 1 ? '' : 's'}`);
+        setText(
+            'tracking-personnel-note',
+            `${personnelCount} persona${personnelCount === 1 ? '' : 's'} vinculada${personnelCount === 1 ? '' : 's'} a la producción.`,
+        );
         setText('tracking-lot-summary-label', `${plural(lotCount, 'Lista', 'Listas')} de producción`);
 
         setProgressWidth('tracking-overall-bar', overallProgress);
@@ -249,12 +256,85 @@
         });
     }
 
+    function formatQuantity(value) {
+        const quantity = toNumber(value);
+        return Number.isInteger(quantity) ? String(quantity) : quantity.toFixed(1);
+    }
+
+    function createProgressBar(progress, label, large = false) {
+        const progressBar = element(
+            'div',
+            `tracking-progress${large ? ' tracking-progress-large' : ''}`,
+        );
+        progressBar.setAttribute('role', 'progressbar');
+        progressBar.setAttribute('aria-label', label);
+        progressBar.setAttribute('aria-valuenow', String(progress));
+        progressBar.setAttribute('aria-valuemin', '0');
+        progressBar.setAttribute('aria-valuemax', '100');
+        const fill = element('span');
+        fill.style.width = `${progress}%`;
+        progressBar.append(fill);
+        return progressBar;
+    }
+
+    function createLotProcess(process, lotName) {
+        const progress = clampProgress(process.progress);
+        const article = element('article', 'tracking-lot-process');
+        if (!process.active) article.classList.add('is-inactive');
+        if (process.status === 'Completado') article.classList.add('is-complete');
+        if (process.status === 'En proceso') article.classList.add('is-progress');
+
+        const top = element('div', 'tracking-lot-process-top');
+        const copy = element('div');
+        copy.append(
+            element('strong', '', process.name || 'Proceso'),
+            element('span', '', process.status || 'Sin datos'),
+        );
+        top.append(copy, element('b', '', formatProgress(progress)));
+
+        const applicableCount = toNumber(process.applicable_count);
+        let detailText;
+        if (!process.active) {
+            detailText = 'Proceso no habilitado para esta OT.';
+        } else if (!applicableCount) {
+            detailText = 'Sin elementos aplicables en este lote.';
+        } else {
+            detailText = [
+                `${formatQuantity(process.advanced_units)} de ${formatQuantity(process.total_units)} unidades`,
+                `${toNumber(process.completed_count)} completos`,
+                `${toNumber(process.in_progress_count)} en proceso`,
+                `${toNumber(process.pending_count)} pendientes`,
+            ].join(' · ');
+        }
+
+        article.append(
+            top,
+            createProgressBar(progress, `${process.name || 'Proceso'} en ${lotName}`),
+            element('p', '', detailText),
+        );
+        return article;
+    }
+
+    function setLotExpanded(article, expanded) {
+        if (!article) return;
+        const toggle = article.querySelector('[data-lot-toggle]');
+        const detail = article.querySelector('.tracking-lot-detail');
+        const label = article.querySelector('[data-lot-toggle-label]');
+        article.classList.toggle('is-open', expanded);
+        if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (detail) detail.hidden = !expanded;
+        if (label) label.textContent = expanded ? 'Ocultar detalle' : 'Ver detalle';
+    }
+
     function renderLots(lots) {
         const container = document.getElementById('tracking-lot-list');
         if (!container) return;
 
         const safeLots = toArray(lots);
         const fragment = document.createDocumentFragment();
+        if (openLotId && !safeLots.some((lot) => String(lot.id) === openLotId)) {
+            openLotId = null;
+        }
 
         if (!safeLots.length) {
             fragment.append(createEmptyState(
@@ -269,15 +349,25 @@
             const elementCount = toNumber(lot.component_count);
             const unitCount = toNumber(lot.unit_count);
             const completedCount = toNumber(lot.completed_count);
+            const inProgressCount = toNumber(lot.in_progress_count);
+            const pendingCount = toNumber(lot.pending_count);
             const progress = clampProgress(lot.progress);
+            const lotId = String(lot.id ?? '');
+            const detailId = `tracking-lot-detail-${lotId || Math.random().toString(36).slice(2)}`;
+            const isOpen = Boolean(lotId) && openLotId === lotId;
 
             const article = element('article', 'tracking-lot');
-            const content = element('div', 'tracking-lot-content');
+            article.dataset.lotId = lotId;
+            article.classList.toggle('is-open', isOpen);
+            const summary = element('button', 'tracking-lot-summary');
+            summary.type = 'button';
+            summary.dataset.lotToggle = '';
+            summary.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            summary.setAttribute('aria-controls', detailId);
             const top = element('div', 'tracking-lot-top');
             const name = element('div', 'tracking-lot-name');
-            const copy = element('div');
 
-            copy.append(
+            name.append(
                 element('h3', '', lotName),
                 element(
                     'p',
@@ -286,27 +376,75 @@
                 ),
             );
 
-            name.append(copy);
-            top.append(name, element('strong', '', formatProgress(progress)));
+            const result = element('div', 'tracking-lot-result');
+            result.append(
+                element('span', 'tracking-status-pill', lot.status || 'Pendiente'),
+                element('strong', '', formatProgress(progress)),
+            );
+            top.append(name, result);
 
-            const progressBar = element('div', 'tracking-progress tracking-progress-large');
-            progressBar.setAttribute('role', 'progressbar');
-            progressBar.setAttribute('aria-label', `Avance de ${lotName}`);
-            progressBar.setAttribute('aria-valuenow', String(progress));
-            progressBar.setAttribute('aria-valuemin', '0');
-            progressBar.setAttribute('aria-valuemax', '100');
+            const foot = element('div', 'tracking-lot-foot');
+            foot.append(element(
+                'span',
+                '',
+                `${completedCount} completos · ${inProgressCount} en proceso · ${pendingCount} pendientes`,
+            ));
+            const disclosure = element('span', 'tracking-lot-disclosure');
+            const disclosureLabel = element(
+                'span',
+                '',
+                isOpen ? 'Ocultar detalle' : 'Ver detalle',
+            );
+            disclosureLabel.dataset.lotToggleLabel = '';
+            const chevron = element('i');
+            chevron.setAttribute('aria-hidden', 'true');
+            disclosure.append(disclosureLabel, chevron);
+            foot.append(disclosure);
 
-            const fill = element('span');
-            fill.style.width = `${progress}%`;
-            progressBar.append(fill);
+            summary.append(
+                top,
+                createProgressBar(progress, `Avance de ${lotName}`, true),
+                foot,
+            );
 
-            const completedLabel = `${completedCount} de ${elementCount} ${plural(elementCount, 'elemento completado', 'elementos completados')}`;
-            content.append(top, progressBar, element('p', 'tracking-lot-foot', completedLabel));
-            article.append(content);
+            const detail = element('section', 'tracking-lot-detail');
+            detail.id = detailId;
+            detail.hidden = !isOpen;
+            detail.setAttribute('aria-label', `Detalle de ${lotName}`);
+            const detailHeading = element('header', 'tracking-lot-detail-heading');
+            const detailCopy = element('div');
+            detailCopy.append(
+                element('strong', '', 'Avance por proceso'),
+                element('span', '', 'Las cantidades corresponden únicamente a este lote.'),
+            );
+            detailHeading.append(detailCopy);
+            const processGrid = element('div', 'tracking-lot-process-grid');
+            toArray(lot.processes).forEach((process) => {
+                processGrid.append(createLotProcess(process, lotName));
+            });
+            detail.append(detailHeading, processGrid);
+            article.append(summary, detail);
             fragment.append(article);
         });
 
         container.replaceChildren(fragment);
+    }
+
+    function setupLotDetails() {
+        const container = document.getElementById('tracking-lot-list');
+        if (!container) return;
+        container.addEventListener('click', (event) => {
+            const toggle = event.target.closest('[data-lot-toggle]');
+            if (!toggle || !container.contains(toggle)) return;
+            const article = toggle.closest('.tracking-lot');
+            if (!article) return;
+            const shouldOpen = toggle.getAttribute('aria-expanded') !== 'true';
+            container.querySelectorAll('.tracking-lot.is-open').forEach((openArticle) => {
+                if (openArticle !== article) setLotExpanded(openArticle, false);
+            });
+            setLotExpanded(article, shouldOpen);
+            openLotId = shouldOpen ? article.dataset.lotId : null;
+        });
     }
 
     function personElementSource(person) {
@@ -409,7 +547,7 @@
             detailButton.type = 'button';
             detailButton.dataset.personIndex = String(index);
             detailButton.setAttribute('aria-label', `Ver detalle de participación de ${personName}`);
-            detailButton.textContent = 'Detalle';
+            detailButton.textContent = 'Ver participación';
 
             article.append(main, detailButton);
             fragment.append(article);
@@ -460,6 +598,7 @@
             image.src = imageUrl;
             image.alt = photoName;
             image.loading = 'lazy';
+            image.decoding = 'async';
 
             button.append(image);
             figure.append(button, element('figcaption', '', photoName));
@@ -606,8 +745,21 @@
         if (input) input.addEventListener('input', applyPersonnelFilter);
     }
 
+    const trackingViewHashes = {
+        lots: '',
+        personnel: '#personal',
+        photos: '#fotos',
+        plans: '#planos',
+        documents: '#otros-documentos',
+    };
+
+    function trackingViewFromHash() {
+        return Object.entries(trackingViewHashes)
+            .find(([, hash]) => hash && hash === window.location.hash)?.[0] || 'lots';
+    }
+
     function selectTrackingView(target, updateHash = true) {
-        const validTarget = ['lots', 'personnel', 'photos'].includes(target)
+        const validTarget = Object.prototype.hasOwnProperty.call(trackingViewHashes, target)
             ? target
             : 'lots';
 
@@ -624,7 +776,7 @@
         });
 
         if (updateHash) {
-            const hash = validTarget === 'photos' ? '#fotos' : '';
+            const hash = trackingViewHashes[validTarget];
             window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
         }
     }
@@ -634,7 +786,8 @@
             tab.addEventListener('click', () => selectTrackingView(tab.dataset.trackingView));
         });
 
-        selectTrackingView(window.location.hash === '#fotos' ? 'photos' : 'lots', false);
+        selectTrackingView(trackingViewFromHash(), false);
+        window.TrackingWorkspace = Object.freeze({ select: selectTrackingView });
     }
 
     function selectActivityTab(target) {
@@ -718,6 +871,35 @@
         updatePhotoSelectionUI();
     }
 
+    async function loadPhotoCandidates(selectedIds = []) {
+        let payload = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const response = await fetch(config.photoCandidatesUrl, {
+                cache: 'no-store',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            payload = await readApiJson(
+                response,
+                'No fue posible consultar Google Drive.',
+            );
+            if (!response.ok || !payload.success || !Array.isArray(payload.fotos)) {
+                throw new Error(payload.error || 'No fue posible consultar Google Drive.');
+            }
+            const returnedIds = new Set(payload.fotos.map((photo) => String(photo.id || '')));
+            const uploadsVisible = selectedIds.every((imageId) => (
+                returnedIds.has(String(imageId))
+            ));
+            if (uploadsVisible || attempt === 2) break;
+            await new Promise((resolve) => window.setTimeout(resolve, 450));
+        }
+        selectedIds.forEach((imageId) => selectedTrackingPhotoIds.add(String(imageId)));
+        renderPhotoCandidates(payload.fotos);
+    }
+
     async function openPhotoManager() {
         if (!config.canManagePhotos) return;
         const backdrop = document.getElementById('tracking-photo-manager-backdrop');
@@ -737,22 +919,7 @@
         window.requestAnimationFrame(() => dialog.focus());
 
         try {
-            const response = await fetch(config.photoCandidatesUrl, {
-                cache: 'no-store',
-                credentials: 'same-origin',
-                headers: {
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-            });
-            const payload = await readApiJson(
-                response,
-                'No fue posible consultar Google Drive.',
-            );
-            if (!response.ok || !payload.success || !Array.isArray(payload.fotos)) {
-                throw new Error(payload.error || 'No fue posible consultar Google Drive.');
-            }
-            renderPhotoCandidates(payload.fotos);
+            await loadPhotoCandidates();
         } catch (error) {
             availableTrackingPhotos = [];
             setPhotoManagerState(error.message || 'No fue posible consultar Google Drive.', 'error');
@@ -822,6 +989,11 @@
             button.addEventListener('click', closePhotoManager);
         });
 
+        const uploadInput = document.getElementById('tracking-photo-upload');
+        if (uploadInput) {
+            uploadInput.addEventListener('change', () => uploadTrackingPhotos(uploadInput));
+        }
+
         const candidates = document.getElementById('tracking-photo-candidates');
         if (candidates) {
             candidates.addEventListener('click', (event) => {
@@ -854,27 +1026,136 @@
         if (saveButton) saveButton.addEventListener('click', saveTrackingPhotos);
     }
 
-    function openPhotoPreview(url, name) {
+    function setPhotoPreviewState(state) {
+        const stage = document.getElementById('tracking-photo-preview-stage');
+        const image = document.getElementById('tracking-photo-preview-image');
+        const loading = stage?.querySelector('[data-photo-preview-loading]');
+        const error = stage?.querySelector('[data-photo-preview-error]');
+        if (!stage) return;
+
+        stage.dataset.state = state;
+        stage.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+        if (loading) loading.hidden = state !== 'loading';
+        if (error) error.hidden = state !== 'error';
+        if (image) image.hidden = state !== 'ready';
+    }
+
+    function preloadPhoto(url) {
+        if (!url || decodedPhotoUrls.has(url)) return Promise.resolve();
+        if (photoDecodePromises.has(url)) return photoDecodePromises.get(url);
+
+        const promise = new Promise((resolve, reject) => {
+            const loader = new Image();
+            loader.decoding = 'async';
+            loader.fetchPriority = 'high';
+            loader.onload = async () => {
+                try {
+                    if (typeof loader.decode === 'function') await loader.decode();
+                } catch (_) {
+                    // onload ya confirma que la imagen está disponible para mostrar.
+                }
+                decodedPhotoUrls.add(url);
+                resolve();
+            };
+            loader.onerror = () => reject(new Error('No se pudo cargar la fotografía.'));
+            loader.src = url;
+        }).finally(() => photoDecodePromises.delete(url));
+
+        photoDecodePromises.set(url, promise);
+        return promise;
+    }
+
+    async function openPhotoPreview(url, name, thumbnail = null) {
         const backdrop = document.getElementById('tracking-photo-preview-backdrop');
         const image = document.getElementById('tracking-photo-preview-image');
         const dialog = backdrop?.querySelector('.tracking-photo-preview');
         if (!backdrop || !image || !dialog || !url) return;
 
+        const requestToken = ++photoPreviewToken;
         lastFocusedElement = document.activeElement;
-        image.src = url;
+        image.removeAttribute('src');
         image.alt = name || 'Fotografía de seguimiento';
         setText('tracking-photo-preview-name', name || 'Fotografía');
+        setPhotoPreviewState('loading');
         backdrop.hidden = false;
         syncBodyScrollLock();
         window.requestAnimationFrame(() => dialog.focus());
+
+        const thumbnailReady = thumbnail instanceof HTMLImageElement
+            && thumbnail.complete
+            && thumbnail.naturalWidth > 0;
+        if (thumbnailReady) decodedPhotoUrls.add(url);
+
+        try {
+            if (!thumbnailReady) await preloadPhoto(url);
+            if (requestToken !== photoPreviewToken || backdrop.hidden) return;
+            image.src = thumbnail?.currentSrc || url;
+            setPhotoPreviewState('ready');
+        } catch (_) {
+            if (requestToken !== photoPreviewToken || backdrop.hidden) return;
+            setPhotoPreviewState('error');
+        }
+    }
+
+    async function uploadTrackingPhotos(input) {
+        const files = Array.from(input?.files || []);
+        if (!files.length || !config.uploadPhotoUrl) return;
+
+        const uploadLabel = input.closest('.tracking-drive-upload');
+        const uploadedIds = [];
+        input.disabled = true;
+        if (uploadLabel) uploadLabel.dataset.uploading = 'true';
+
+        try {
+            for (let index = 0; index < files.length; index += 1) {
+                const formData = new FormData();
+                formData.append('file', files[index]);
+                setPhotoManagerState(
+                    `Subiendo ${index + 1} de ${files.length}: ${files[index].name}`,
+                    'inline',
+                );
+                const response = await fetch(config.uploadPhotoUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-CSRFToken': config.csrfToken || '',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: formData,
+                });
+                const payload = await readApiJson(
+                    response,
+                    'No fue posible subir la fotografía.',
+                );
+                if (!response.ok || !payload.success || !payload.photo?.id) {
+                    throw new Error(payload.error || 'No fue posible subir la fotografía.');
+                }
+                uploadedIds.push(String(payload.photo.id));
+            }
+
+            await loadPhotoCandidates(uploadedIds);
+            setPhotoManagerState(
+                `${uploadedIds.length} fotografía${uploadedIds.length === 1 ? '' : 's'} subida${uploadedIds.length === 1 ? '' : 's'}. Revisa la selección y guárdala.`,
+                'inline',
+            );
+        } catch (error) {
+            setPhotoManagerState(error.message || 'No fue posible subir las fotografías.', 'error');
+        } finally {
+            input.disabled = false;
+            input.value = '';
+            if (uploadLabel) uploadLabel.dataset.uploading = 'false';
+        }
     }
 
     function closePhotoPreview() {
         const backdrop = document.getElementById('tracking-photo-preview-backdrop');
         const image = document.getElementById('tracking-photo-preview-image');
         if (!backdrop || backdrop.hidden) return;
+        photoPreviewToken += 1;
         backdrop.hidden = true;
         if (image) image.removeAttribute('src');
+        setPhotoPreviewState('idle');
         syncBodyScrollLock();
         if (lastFocusedElement instanceof HTMLElement) lastFocusedElement.focus();
     }
@@ -885,8 +1166,19 @@
             gallery.addEventListener('click', (event) => {
                 const trigger = event.target.closest('[data-photo-preview]');
                 if (!trigger || !gallery.contains(trigger)) return;
-                openPhotoPreview(trigger.dataset.photoUrl, trigger.dataset.photoName);
+                openPhotoPreview(
+                    trigger.dataset.photoUrl,
+                    trigger.dataset.photoName,
+                    trigger.querySelector('img'),
+                );
             });
+            const warmPreview = (event) => {
+                const trigger = event.target.closest('[data-photo-preview]');
+                if (!trigger || !gallery.contains(trigger)) return;
+                preloadPhoto(trigger.dataset.photoUrl).catch(() => {});
+            };
+            gallery.addEventListener('pointerover', warmPreview);
+            gallery.addEventListener('focusin', warmPreview);
         }
         document.querySelectorAll('[data-close-photo-preview]').forEach((button) => {
             button.addEventListener('click', closePhotoPreview);
@@ -900,13 +1192,11 @@
     }
 
     function syncBodyScrollLock() {
-        const activityBackdrop = document.getElementById('tracking-activity-backdrop');
         const personBackdrop = document.getElementById('tracking-person-detail-backdrop');
         const photoManagerBackdrop = document.getElementById('tracking-photo-manager-backdrop');
         const photoPreviewBackdrop = document.getElementById('tracking-photo-preview-backdrop');
         const hasOpenOverlay = Boolean(
-            (activityBackdrop && !activityBackdrop.hidden)
-            || (personBackdrop && !personBackdrop.hidden)
+            (personBackdrop && !personBackdrop.hidden)
             || (photoManagerBackdrop && !photoManagerBackdrop.hidden)
             || (photoPreviewBackdrop && !photoPreviewBackdrop.hidden)
         );
@@ -1124,6 +1414,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         setupTrackingWorkspace();
+        setupLotDetails();
         setupPersonnelSearch();
         setupActivityTabs();
         setupActivityDrawer();

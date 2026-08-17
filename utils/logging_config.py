@@ -58,9 +58,14 @@ def configure_structured_logging(app):
 
     @app.after_request
     def finish_request_log(response):
+        request_id = getattr(g, 'request_id', None)
+        if not request_id:
+            supplied_request_id = request.headers.get('X-Request-ID', '').strip()
+            request_id = supplied_request_id[:100] or str(uuid.uuid4())
+            g.request_id = request_id
         started_at = getattr(g, 'request_started_at', time.perf_counter())
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
-        response.headers['X-Request-ID'] = g.request_id
+        response.headers['X-Request-ID'] = request_id
         app.logger.info(
             'request_completed',
             extra={

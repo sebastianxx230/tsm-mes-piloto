@@ -4,7 +4,7 @@
 {% block page_title %}Catálogo de Órdenes{% endblock %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/catalogo.css') }}?v=3.3.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/catalogo.css') }}?v=3.3.1">
 {% endblock %}
 
 {% block content %}
@@ -133,7 +133,7 @@
     
     <div class="catalog-toolbar mb-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
 
-        <div class="catalog-search flex h-10 w-full items-center gap-2 rounded-md border border-slate-300 bg-slate-50 px-3 transition-all focus-within:border-blue-500 focus-within:bg-white focus-within:ring-1 focus-within:ring-blue-500">
+        <div class="catalog-search flex h-10 w-full items-center gap-2 rounded-md border border-slate-300 bg-slate-50 px-3 transition-all focus-within:border-slate-500 focus-within:bg-white">
             <span class="material-symbols-rounded text-slate-400 text-[20px]">search</span>
             <input type="text" id="searchInput" placeholder="Buscar por OT, cliente o estructura." onkeyup="filterAndSort()" class="search-clean w-full text-[13px] bg-transparent outline-none text-slate-800 font-medium placeholder-slate-400">
         </div>
@@ -213,7 +213,7 @@
                             <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="text-slate-500 hover:bg-blue-50 hover:text-blue-600" title="Gestionar producción">
                                 <span class="material-symbols-rounded text-[17px] block">route</span>
                             </a>
-                            <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="text-slate-500 hover:bg-blue-50 hover:text-blue-600" title="Vista de seguimiento">
+                            <a href="{{ url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot) }}" class="text-slate-500 hover:bg-blue-50 hover:text-blue-600" title="Vista de seguimiento">
                                 <span class="material-symbols-rounded text-[17px] block">monitoring</span>
                             </a>
                             <a href="{{ url_for('reporte_bp.seleccionar_fotos_reporte', ot_id=ot.item) }}"
@@ -235,7 +235,7 @@
                         </div>
                         {% else %}
                         <div class="flex justify-center">
-                            <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="ot-viewer-action" aria-label="Ver seguimiento" data-tooltip="Ver seguimiento">
+                            <a href="{{ url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot) }}" class="ot-viewer-action" aria-label="Ver seguimiento" data-tooltip="Ver seguimiento">
                                 <span class="material-symbols-rounded text-[18px] block">visibility</span>
                             </a>
                         </div>
@@ -290,7 +290,7 @@
                     <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="h-[30px] flex items-center justify-center text-slate-500 bg-slate-50 border border-slate-200 rounded transition-colors shadow-sm">
                         <span class="material-symbols-rounded text-[16px]">route</span>
                     </a>
-                    <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="h-[30px] flex items-center justify-center text-slate-500 bg-slate-50 border border-slate-200 rounded transition-colors shadow-sm">
+                    <a href="{{ url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot) }}" class="h-[30px] flex items-center justify-center text-slate-500 bg-slate-50 border border-slate-200 rounded transition-colors shadow-sm">
                         <span class="material-symbols-rounded text-[16px]">monitoring</span>
                     </a>
                     <a href="{{ url_for('reporte_bp.seleccionar_fotos_reporte', ot_id=ot.item) }}"
@@ -312,7 +312,7 @@
                 </div>
                 {% else %}
                 <div class="mt-2 flex justify-end">
-                    <a href="{{ url_for('gestion_ot_bp.seguimiento', id=ot.item) }}" class="ot-viewer-action" aria-label="Ver seguimiento" data-tooltip="Ver seguimiento">
+                    <a href="{{ url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot) }}" class="ot-viewer-action" aria-label="Ver seguimiento" data-tooltip="Ver seguimiento">
                         <span class="material-symbols-rounded text-[17px]">visibility</span>
                     </a>
                 </div>

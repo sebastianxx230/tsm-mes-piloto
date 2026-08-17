@@ -18,6 +18,11 @@ let currentPlEtag = null;
 let autoSyncInterval = null;
 let currentDetalleRow = null;
 let lastDetalleTrigger = null;
+let personnelCatalog = [];
+let personnelCatalogLoaded = false;
+let personnelCatalogRequest = null;
+let personnelSelectorProcess = null;
+let reopenSelectorAfterPersonnel = false;
 
 let hasPendingImport = false;
 let tabsRequestInFlight = false;
@@ -32,7 +37,7 @@ let pendingSaveConfirmation = null;
 const cellSaveTimers = new Map();
 let cellSaveQueue = Promise.resolve();
 let processConfigSaveQueue = Promise.resolve();
-const AUTO_SYNC_INTERVAL_MS = 12000;
+const AUTO_SYNC_INTERVAL_MS = 30000;
 const MESSAGE_SYNC_INTERVAL_MS = 15000;
 const CELL_SAVE_DELAY_MS = 650;
 
@@ -89,6 +94,17 @@ function isChatOpen() {
     return Boolean(drawer && !drawer.classList.contains('translate-x-full'));
 }
 
+function isProductionDialogOpen() {
+    return [
+        'detalle-overlay',
+        'personnel-selector-overlay',
+        'personal-master-overlay',
+    ].some(id => {
+        const element = document.getElementById(id);
+        return element && !element.classList.contains('hidden');
+    });
+}
+
 function setImportBusy(isBusy) {
     importSaveInFlight = isBusy;
     const button = document.getElementById('btn-guardar-avances');
@@ -119,19 +135,20 @@ function stableComponentsFingerprint(components) {
         cantidad: Number(component.cantidad || 0),
         descripcion: String(component.descripcion ?? '').trim(),
         longitud: String(component.longitud ?? '').trim(),
-        hab: Number(component.hab ?? component.hab_real ?? 0),
-        arm: Number(component.arm ?? component.arm_real ?? 0),
-        sol: Number(component.sol ?? component.sol_real ?? 0),
-        lim: Number(component.lim ?? component.lim_real ?? 0),
-        lib: Number(component.lib ?? component.lib_real ?? 0),
-        gal: Number(component.gal ?? component.gal_real ?? 0),
-        are: Number(component.are ?? component.are_real ?? 0),
-        pin: Number(component.pin ?? component.pin_real ?? 0),
+        hab: Number(component.hab ?? component.hab_real ?? -1),
+        arm: Number(component.arm ?? component.arm_real ?? -1),
+        sol: Number(component.sol ?? component.sol_real ?? -1),
+        lim: Number(component.lim ?? component.lim_real ?? -1),
+        lib: Number(component.lib ?? component.lib_real ?? -1),
+        gal: Number(component.gal ?? component.gal_real ?? -1),
+        are: Number(component.are ?? component.are_real ?? -1),
+        pin: Number(component.pin ?? component.pin_real ?? -1),
         des: Number(component.des ?? component.des_real ?? 0),
         alerta: Boolean(component.alerta),
         tipo: String(component.tipo || 'fab'),
         estado_suministro: String(component.estado_suministro || 'No requerido'),
-        operario: String(component.operario || '').trim()
+        operario: String(component.operario || '').trim(),
+        fecha_realizacion: String(component.fecha_realizacion || '')
     })));
 }
 
@@ -231,7 +248,7 @@ document.addEventListener("DOMContentLoaded", () => {
         window.addEventListener('resize', programarAjusteAlturaMatriz);
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) return;
-            if (currentPlId && !hasPendingImport && !hayGuardadosCeldaPendientes()) sincronizarComponentesBD();
+            if (currentPlId && !isProductionDialogOpen() && !hasPendingImport && !hayGuardadosCeldaPendientes()) sincronizarComponentesBD();
             if (isChatOpen()) cargarMensajes();
         });
         window.addEventListener('pagehide', () => {
@@ -298,14 +315,30 @@ function configurarDetalleElemento() {
     const overlay = document.getElementById('detalle-overlay');
     if (!overlay) return;
 
+    const personnelSelector = document.getElementById('personnel-selector-overlay');
+    const personnelMaster = document.getElementById('personal-master-overlay');
+
     overlay.addEventListener('click', (event) => {
         if (event.target === overlay) cerrarDetalle();
     });
+    personnelSelector?.addEventListener('click', event => {
+        if (event.target === personnelSelector) cerrarSelectorPersonal();
+    });
+    personnelMaster?.addEventListener('click', event => {
+        if (event.target === personnelMaster) cerrarDirectorioPersonal();
+    });
 
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !overlay.classList.contains('hidden')) {
-            cerrarDetalle();
+        if (event.key !== 'Escape') return;
+        if (personnelSelector && !personnelSelector.classList.contains('hidden')) {
+            cerrarSelectorPersonal();
+            return;
         }
+        if (personnelMaster && !personnelMaster.classList.contains('hidden')) {
+            cerrarDirectorioPersonal();
+            return;
+        }
+        if (!overlay.classList.contains('hidden')) cerrarDetalle();
     });
 }
 
@@ -419,7 +452,6 @@ async function cargarTabs() {
             html += `<button onclick="abrirModalPL('modal-nuevo-pl', 'box-nuevo-pl', 'input-nuevo-pl')" class="mb-1 ml-1 flex shrink-0 items-center gap-1 rounded-md border border-dashed border-blue-300 bg-white px-3 py-2 text-[12px] font-bold text-blue-700 transition-colors hover:bg-blue-50"><span class="material-symbols-rounded text-[16px]">add</span> Lista</button>`;
         }
         container.innerHTML = html;
-
         if (currentPlId) {
             await cargarComponentesTab({ force: true });
         }
@@ -459,7 +491,6 @@ async function guardarNuevoPL() {
         input.focus();
         return;
     }
-
     try {
         const res = await fetch('/api/produccion/packing_lists', {
             method: 'POST',
@@ -467,7 +498,10 @@ async function guardarNuevoPL() {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCsrfToken()
             },
-            body: JSON.stringify({ ot_id: otId, nombre })
+            body: JSON.stringify({
+                ot_id: otId,
+                nombre
+            })
         });
         const data = await readJsonResponse(res);
         if (!res.ok || !data.success) {
@@ -625,6 +659,223 @@ function stringifyOperarios(op) {
 }
 
 
+async function cargarPersonalProduccion({ force = false } = {}) {
+    if (personnelCatalogLoaded && !force) return personnelCatalog;
+    if (personnelCatalogRequest) return personnelCatalogRequest;
+
+    personnelCatalogRequest = (async () => {
+        try {
+            const response = await fetch('/api/produccion/personal', {
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await readJsonResponse(response);
+            if (!response.ok || !data.success || !Array.isArray(data.personal)) {
+                throw new Error(responseError(data, 'No se pudo cargar el personal registrado.'));
+            }
+            personnelCatalog = data.personal;
+            personnelCatalogLoaded = true;
+            renderizarDirectorioPersonal();
+            if (personnelSelectorProcess) renderizarOpcionesPersonal();
+            return personnelCatalog;
+        } catch (error) {
+            console.error('Error al cargar personal:', error);
+            personnelCatalog = [];
+            personnelCatalogLoaded = false;
+            renderizarDirectorioPersonal();
+            throw error;
+        } finally {
+            personnelCatalogRequest = null;
+        }
+    })();
+
+    return personnelCatalogRequest;
+}
+
+function renderizarDirectorioPersonal() {
+    const container = document.getElementById('personal-master-list');
+    const count = document.getElementById('personal-master-count');
+    if (count) count.textContent = `${personnelCatalog.length} ${personnelCatalog.length === 1 ? 'persona' : 'personas'}`;
+    if (!container) return;
+    if (!personnelCatalogLoaded) {
+        container.innerHTML = '<div class="production-personnel-directory-empty"><strong>Cargando personal…</strong><span>La lista aparecerá en un momento.</span></div>';
+        return;
+    }
+    if (!personnelCatalog.length) {
+        container.innerHTML = '<div class="production-personnel-directory-empty"><strong>Aún no hay personal registrado</strong><span>Agrega al equipo antes de asignarlo a los procesos.</span></div>';
+        return;
+    }
+    container.innerHTML = personnelCatalog.map(person => `
+        <article>
+            <span aria-hidden="true">${escapeHtml(String(person.nombre || '').trim().charAt(0).toUpperCase() || 'P')}</span>
+            <strong>${escapeHtml(person.nombre)}</strong>
+        </article>
+    `).join('');
+}
+
+async function abrirDirectorioPersonal() {
+    if (!canEdit) return;
+    const overlay = document.getElementById('personal-master-overlay');
+    const dialog = document.getElementById('personal-master-dialog');
+    if (!overlay || !dialog) return;
+    renderizarDirectorioPersonal();
+    overlay.classList.remove('hidden');
+    overlay.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => {
+        overlay.classList.remove('opacity-0');
+        dialog.classList.remove('scale-95');
+        document.getElementById('personal-master-name')?.focus({ preventScroll: true });
+    });
+    try {
+        await cargarPersonalProduccion();
+    } catch (error) {
+        mostrarAlerta(error.message || 'No se pudo cargar el personal.', 'error');
+    }
+}
+
+function cerrarDirectorioPersonal() {
+    const overlay = document.getElementById('personal-master-overlay');
+    const dialog = document.getElementById('personal-master-dialog');
+    if (!overlay || !dialog) return;
+    overlay.classList.add('opacity-0');
+    dialog.classList.add('scale-95');
+    overlay.setAttribute('aria-hidden', 'true');
+    window.setTimeout(() => {
+        overlay.classList.add('hidden');
+        if (reopenSelectorAfterPersonnel && personnelSelectorProcess) {
+            reopenSelectorAfterPersonnel = false;
+            abrirSelectorPersonal(personnelSelectorProcess);
+        }
+    }, 180);
+}
+
+async function registrarPersonal(event) {
+    event.preventDefault();
+    if (!canEdit) return;
+    const input = document.getElementById('personal-master-name');
+    const name = input?.value.trim() || '';
+    if (!name) {
+        input?.focus();
+        return;
+    }
+    try {
+        const response = await fetch('/api/produccion/personal', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ nombre: name })
+        });
+        const data = await readJsonResponse(response);
+        if (!response.ok || !data.success) {
+            throw new Error(responseError(data, 'No se pudo registrar a la persona.'));
+        }
+        if (input) input.value = '';
+        const person = data.person;
+        if (person?.id) {
+            const existingIndex = personnelCatalog.findIndex(item => Number(item.id) === Number(person.id));
+            if (existingIndex === -1) personnelCatalog.push(person);
+            else personnelCatalog[existingIndex] = person;
+            personnelCatalog.sort((left, right) => String(left.nombre).localeCompare(String(right.nombre), 'es', { sensitivity: 'base' }));
+            personnelCatalogLoaded = true;
+            renderizarDirectorioPersonal();
+        }
+        mostrarAlerta(data.created ? 'Persona registrada.' : 'Esa persona ya estaba registrada.', data.created ? 'exito' : 'info');
+        input?.focus();
+    } catch (error) {
+        mostrarAlerta(error.message || 'No se pudo registrar a la persona.', 'error');
+    }
+}
+
+async function abrirSelectorPersonal(processKey) {
+    if (!canEdit || !currentDetalleRow) return;
+    personnelSelectorProcess = processKey;
+    const processNames = {hab:'Habilitado',arm:'Armado',sol:'Soldado',lim:'Limpieza',lib:'Liberación',gal:'Galvanizado',are:'Arenado',pin:'Pintado'};
+    const overlay = document.getElementById('personnel-selector-overlay');
+    const dialog = document.getElementById('personnel-selector-dialog');
+    const context = document.getElementById('personnel-selector-context');
+    const search = document.getElementById('personnel-selector-search');
+    if (!overlay || !dialog) return;
+    if (context) context.textContent = `${processNames[processKey] || processKey} · ${document.getElementById('det-marca')?.textContent || ''}`;
+    if (search) search.value = '';
+    renderizarOpcionesPersonal();
+    overlay.classList.remove('hidden');
+    overlay.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => {
+        overlay.classList.remove('opacity-0');
+        dialog.classList.remove('scale-95');
+        search?.focus({ preventScroll: true });
+    });
+    if (!personnelCatalogLoaded) {
+        try {
+            await cargarPersonalProduccion();
+        } catch (error) {
+            mostrarAlerta(error.message || 'No se pudo cargar el personal.', 'error');
+        }
+    }
+}
+
+function cerrarSelectorPersonal() {
+    const overlay = document.getElementById('personnel-selector-overlay');
+    const dialog = document.getElementById('personnel-selector-dialog');
+    if (!overlay || !dialog) return;
+    overlay.classList.add('opacity-0');
+    dialog.classList.add('scale-95');
+    overlay.setAttribute('aria-hidden', 'true');
+    window.setTimeout(() => overlay.classList.add('hidden'), 180);
+}
+
+function renderizarOpcionesPersonal() {
+    const container = document.getElementById('personnel-selector-options');
+    const empty = document.getElementById('personnel-selector-empty');
+    if (!container || !empty || !currentDetalleRow || !personnelSelectorProcess) return;
+    const hidden = currentDetalleRow.querySelector('.input-operario');
+    if (!personnelCatalogLoaded) {
+        empty.hidden = true;
+        container.hidden = false;
+        container.innerHTML = '<div class="production-personnel-directory-empty"><strong>Cargando personal…</strong></div>';
+        return;
+    }
+    const assignments = parseOperarios(hidden?.value || '');
+    const selectedKeys = new Set(
+        normalizeOperatorNames(assignments[personnelSelectorProcess] || '')
+            .split(',')
+            .map(name => name.trim().toLocaleLowerCase())
+            .filter(Boolean)
+    );
+    empty.hidden = personnelCatalog.length > 0;
+    container.hidden = personnelCatalog.length === 0;
+    container.innerHTML = personnelCatalog.map(person => {
+        const checked = selectedKeys.has(String(person.nombre || '').toLocaleLowerCase());
+        return `<label data-personnel-option data-search="${escapeHtml(String(person.nombre || '').toLocaleLowerCase())}">
+            <input type="checkbox" value="${escapeHtml(person.nombre)}" ${checked ? 'checked' : ''}>
+            <span aria-hidden="true"></span><strong>${escapeHtml(person.nombre)}</strong>
+        </label>`;
+    }).join('');
+}
+
+function filtrarSelectorPersonal() {
+    const search = document.getElementById('personnel-selector-search')?.value.trim().toLocaleLowerCase() || '';
+    document.querySelectorAll('[data-personnel-option]').forEach(option => {
+        option.hidden = search && !String(option.dataset.search || '').includes(search);
+    });
+}
+
+function abrirDirectorioDesdeSelector() {
+    reopenSelectorAfterPersonnel = true;
+    cerrarSelectorPersonal();
+    window.setTimeout(abrirDirectorioPersonal, 190);
+}
+
+async function guardarSeleccionPersonal() {
+    if (!personnelSelectorProcess) return;
+    const names = Array.from(document.querySelectorAll('#personnel-selector-options input:checked'))
+        .map(input => input.value);
+    const saved = await guardarOpProceso(personnelSelectorProcess, names.join(', '));
+    if (saved) cerrarSelectorPersonal();
+}
+
+
 async function obtenerComponentesRemotos({ force = false } = {}) {
     if (!currentPlId || componentsRequestInFlight) return null;
     componentsRequestInFlight = true;
@@ -678,7 +929,7 @@ function iniciarAutoSync() {
     autoSyncInterval = setInterval(() => {
         if (document.hidden) return;
 
-        if (currentPlId && !hasPendingImport && !hayGuardadosCeldaPendientes()) {
+        if (currentPlId && !isProductionDialogOpen() && !hasPendingImport && !hayGuardadosCeldaPendientes()) {
             sincronizarComponentesBD();
         }
 
@@ -722,6 +973,7 @@ async function sincronizarComponentesBD() {
             mapComp[String(component.id)] = component;
         });
 
+        let matrixChanged = false;
         filas.forEach(tr => {
             const bdComp = mapComp[String(tr.dataset.id)];
             if (!bdComp) return;
@@ -762,7 +1014,8 @@ async function sincronizarComponentesBD() {
                         && Number(input.value) !== remoteValue
                     ) {
                         input.value = remoteValue;
-                        validarYCalcular(input, cant, proc, true);
+                        validarYCalcular(input, cant, proc, true, true);
+                        matrixChanged = true;
                     }
                 });
             }
@@ -775,7 +1028,8 @@ async function sincronizarComponentesBD() {
                 && Number(inputDespacho.value) !== remoteDispatch
             ) {
                 inputDespacho.value = remoteDispatch;
-                validarYCalcular(inputDespacho, cant, 'des', true);
+                validarYCalcular(inputDespacho, cant, 'des', true, true);
+                matrixChanged = true;
             }
 
             const alertButton = tr.querySelector('button[title="Reportar incidencia"]');
@@ -790,6 +1044,7 @@ async function sincronizarComponentesBD() {
                 }
             }
         });
+        if (matrixChanged) recalcularMatriz();
         loadedComponentsFingerprint = stableComponentsFingerprint(componentes);
     } catch (error) {
         console.error("Error sincronizando elementos:", error);
@@ -893,7 +1148,7 @@ async function guardarPackingListBD() {
                 const input = fila.querySelector(`.proc-${process}`);
                 values[process] = input
                     ? (Number.parseFloat(input.value) || 0)
-                    : 0;
+                    : -1;
             });
         }
 
@@ -910,14 +1165,14 @@ async function guardarPackingListBD() {
             cantidad: Number.parseInt(fila.dataset.cant, 10) || 0,
             descripcion: fila.cells[3].innerText.trim(),
             longitud: fila.cells[4].innerText.trim(),
-            hab: values.hab || 0,
-            arm: values.arm || 0,
-            sol: values.sol || 0,
-            lim: values.lim || 0,
-            lib: values.lib || 0,
-            gal: values.gal || 0,
-            are: values.are || 0,
-            pin: values.pin || 0,
+            hab: values.hab ?? -1,
+            arm: values.arm ?? -1,
+            sol: values.sol ?? -1,
+            lim: values.lim ?? -1,
+            lib: values.lib ?? -1,
+            gal: values.gal ?? -1,
+            are: values.are ?? -1,
+            pin: values.pin ?? -1,
             des: values.des || 0,
             alerta: fila.classList.contains('row-alert'),
             tipo: tipoRow,
@@ -926,7 +1181,8 @@ async function guardarPackingListBD() {
                 : 'No requerido',
             operario: inputOperario
                 ? inputOperario.value.trim()
-                : ''
+                : '',
+            fecha_realizacion: fila.dataset.fechaRealizacion || null
         });
     });
 
@@ -1010,6 +1266,8 @@ function renderizarTabla(componentes, isFromDB) {
         return;
     }
 
+    const tableFragment = document.createDocumentFragment();
+
     const ordenGrupos = ['MATERIALES DE FABRICACIÓN', 'PERNERÍA TEMPLATE', 'PERNERÍA TORRE', 'CABLE DE VIDA', 'SISTEMA DE VIENTOS', 'OTROS SUMINISTROS'];
     const grupos = {}; ordenGrupos.forEach(g => grupos[g] = []);
 
@@ -1034,7 +1292,7 @@ function renderizarTabla(componentes, isFromDB) {
                 <span class="text-slate-500 font-bold ml-1 text-[10px] bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">${items.length} regs</span>
             </div>
         </td>`;
-        tbody.appendChild(trHeader);
+        tableFragment.appendChild(trHeader);
 
         items.forEach(comp => {
             const marca = comp.marca || 'S/M';
@@ -1045,6 +1303,7 @@ function renderizarTabla(componentes, isFromDB) {
             const tipo = comp.tipo || 'fab';
             const isSuministro = tipo !== 'fab' && tipo !== 'fabricacion';
             const operario = comp.operario || '';
+            const fechaRealizacion = comp.fecha_realizacion || '';
             const estadoSuministro = comp.estado_suministro || 'No requerido';
 
             const safeMarca = escapeHtml(marca);
@@ -1052,7 +1311,7 @@ function renderizarTabla(componentes, isFromDB) {
             const safeLength = escapeHtml(long);
             const safeOperator = escapeHtml(operario);
 
-            const v = { hab: isFromDB ? comp.hab_real : 0, arm: isFromDB ? comp.arm_real : 0, sol: isFromDB ? comp.sol_real : 0, lim: isFromDB ? comp.lim_real : 0, lib: isFromDB ? comp.lib_real : 0, gal: isFromDB ? comp.gal_real : 0, are: isFromDB ? comp.are_real : 0, pin: isFromDB ? comp.pin_real : 0, des: isFromDB ? comp.des_real : 0 };
+            const v = { hab: isFromDB ? comp.hab_real : -1, arm: isFromDB ? comp.arm_real : -1, sol: isFromDB ? comp.sol_real : -1, lim: isFromDB ? comp.lim_real : -1, lib: isFromDB ? comp.lib_real : -1, gal: isFromDB ? comp.gal_real : -1, are: isFromDB ? comp.are_real : -1, pin: isFromDB ? comp.pin_real : -1, des: isFromDB ? comp.des_real : 0 };
             const alerta = isFromDB ? comp.alerta : false; const alertClass = alerta ? 'row-alert' : ''; const alertIcon = alerta ? '<span class="material-symbols-rounded text-[18px] text-red-500">warning</span>' : '<span class="material-symbols-rounded text-[18px] text-slate-300 hover:text-slate-500 transition-colors">emoji_flags</span>';
             const alertControl = canEdit
                 ? `<button onclick="toggleAlertaFila(this)" class="w-6 h-6 rounded flex items-center justify-center transition mx-auto" title="Reportar incidencia">${alertIcon}</button>`
@@ -1061,6 +1320,7 @@ function renderizarTabla(componentes, isFromDB) {
             const tr = document.createElement('tr');
             tr.className = `hover:bg-slate-50 bg-white transition-colors group border-b border-slate-100 ${alertClass}`;
             tr.dataset.cant = cant; tr.dataset.tipo = tipo;
+            tr.dataset.fechaRealizacion = fechaRealizacion;
             if (dbId) tr.dataset.id = dbId;
 
             let html = `<td class="px-1 py-1.5 border-r border-slate-100 sticky-c-alert bg-white text-center align-middle group-hover:bg-slate-50 transition-colors">${alertControl}</td>
@@ -1104,7 +1364,7 @@ function renderizarTabla(componentes, isFromDB) {
                     const isNA = v[proc] === -1;
 
                     html += `<td class="px-1 py-1.5 text-center border-r border-slate-100 font-bold text-slate-400 col-${proc} align-middle" style="${isHidden}">${isNA ? '-' : cant}</td>
-                        <td class="px-1 py-1.5 border-r border-slate-100 col-${proc} align-middle" style="${isHidden}"><input type="number" value="${v[proc]}" min="-1" max="${cant}" ${canEdit ? `oninput="validarYCalcular(this, ${cant}, '${proc}')"` : 'disabled aria-readonly="true"'} class="cell-input proc-${proc} ${isNA ? 'text-slate-300' : ''} ${canEdit ? '' : 'cursor-default bg-slate-50'}"></td>
+                        <td class="production-process-real-cell px-1 py-1.5 border-r border-slate-100 col-${proc} align-middle" style="${isHidden}"><input type="number" value="${v[proc]}" min="-1" max="${cant}" ${canEdit ? `oninput="validarYCalcular(this, ${cant}, '${proc}')"` : 'disabled aria-readonly="true"'} class="cell-input proc-${proc} ${isNA ? 'is-not-applicable' : ''} ${canEdit ? '' : 'cursor-default bg-slate-50'}">${isNA ? '<span class="production-process-na-label" aria-hidden="true">N/A</span>' : ''}</td>
                         <td class="px-1 py-1.5 text-center font-medium text-slate-400 bg-white border-r border-slate-200 pct-${proc} col-${proc} align-middle group-hover:bg-slate-50 transition-colors" style="${isHidden}">${isNA ? 'N/A' : '0.0%'}</td>`;
                 });
             }
@@ -1120,20 +1380,51 @@ function renderizarTabla(componentes, isFromDB) {
                     abrirDetalle(detailButton, marca, long, cant, desc, tipo);
                 });
             }
-            tbody.appendChild(tr); piezas++;
+            tableFragment.appendChild(tr); piezas++;
 
             if(!isSuministro) {
-                procesosProd.forEach(proc => { if(proc !== 'des') { const inp = tr.querySelector(`.proc-${proc}`); if (inp && inp.value !== 0 && inp.value !== "0") validarYCalcular(inp, cant, proc, true); }});
+                procesosProd.forEach(proc => { if(proc !== 'des') { const inp = tr.querySelector(`.proc-${proc}`); if (inp && inp.value !== 0 && inp.value !== "0") validarYCalcular(inp, cant, proc, true, true); }});
             }
             const inpDes = tr.querySelector('.proc-des');
-            if(inpDes && inpDes.value > 0) validarYCalcular(inpDes, cant, 'des', true);
+            if(inpDes && inpDes.value > 0) validarYCalcular(inpDes, cant, 'des', true, true);
         });
     });
+
+    tbody.appendChild(tableFragment);
 
     const lbl = document.getElementById('contador-piezas');
     if(lbl) lbl.innerText = `${piezas} Regs`;
     recalcularMatriz();
     window.requestAnimationFrame(ajustarAlturaMatriz);
+}
+
+function normalizarEtiquetaExcel(value) {
+    return String(value ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toUpperCase();
+}
+
+function fechaExcelIso(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    if (typeof value === 'number' && Number.isFinite(value) && window.XLSX?.SSF) {
+        const parts = XLSX.SSF.parse_date_code(value);
+        if (parts?.y && parts?.m && parts?.d) {
+            return `${parts.y}-${String(parts.m).padStart(2, '0')}-${String(parts.d).padStart(2, '0')}`;
+        }
+    }
+    const text = String(value ?? '').trim();
+    const isoMatch = text.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
+    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+    const localMatch = text.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b/);
+    if (localMatch) return `${localMatch[3]}-${localMatch[2].padStart(2, '0')}-${localMatch[1].padStart(2, '0')}`;
+    return '';
 }
 
 function importarPackingList(event) {
@@ -1145,7 +1436,7 @@ function importarPackingList(event) {
     reader.onload = function(loadEvent) {
         try {
             const data = new Uint8Array(loadEvent.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
             const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
             const json = XLSX.utils.sheet_to_json(firstSheet, {
                 header: 1,
@@ -1180,11 +1471,7 @@ function importarPackingList(event) {
                 return;
             }
 
-            const headers = json[headerRowIdx].map(header => (
-                typeof header === 'string'
-                    ? header.toUpperCase().trim()
-                    : ""
-            ));
+            const headers = json[headerRowIdx].map(normalizarEtiquetaExcel);
             const idxMarca = headers.findIndex(header => (
                 header.includes('MARCA')
                 || header.includes('CÓDIGO')
@@ -1197,6 +1484,10 @@ function importarPackingList(event) {
             ));
             const idxDesc = headers.findIndex(header => header.includes('DESCRIP'));
             const idxLong = headers.findIndex(header => header.includes('LONGITUD'));
+            const idxFecha = headers.findIndex(header => (
+                header === 'FECHA'
+                || /FECHA.*(FABRIC|REALIZ|TERMIN|FINAL)/.test(header)
+            ));
 
             if (idxMarca === -1 || idxCant === -1) {
                 mostrarAlerta(
@@ -1270,7 +1561,19 @@ function importarPackingList(event) {
                         : '0.0',
                     tipo: currentTipo,
                     estado_suministro: 'No requerido',
-                    operario: ''
+                    operario: '',
+                    fecha_realizacion: idxFecha !== -1
+                        ? (fechaExcelIso(row[idxFecha]) || null)
+                        : null,
+                    hab: -1,
+                    arm: -1,
+                    sol: -1,
+                    lim: -1,
+                    lib: -1,
+                    gal: -1,
+                    are: -1,
+                    pin: -1,
+                    des: 0
                 });
             }
 
@@ -1284,8 +1587,9 @@ function importarPackingList(event) {
 
             renderizarTabla(componentes, false);
             setPendingImport(true);
+            const datedElements = componentes.filter(component => component.fecha_realizacion).length;
             mostrarAlerta(
-                `Excel cargado: ${componentes.length} elementos pendientes de guardar.`,
+                `Excel cargado: ${componentes.length} elementos${datedElements ? `, ${datedElements} con fecha` : ''} pendientes de guardar.`,
                 "info"
             );
         } catch (error) {
@@ -1332,7 +1636,7 @@ function actualizarEstadoSuministro(selectElement) {
     recalcularMatriz();
 }
 
-function validarYCalcular(input, maxCant, procKey, skipSave = false) {
+function validarYCalcular(input, maxCant, procKey, skipSave = false, skipRecalculate = false) {
     if (!canEdit && !skipSave) return;
 
     const row = input.closest('tr');
@@ -1342,7 +1646,7 @@ function validarYCalcular(input, maxCant, procKey, skipSave = false) {
     if (valueText === '') {
         const percentageCell = row.querySelector(`.pct-${procKey}`);
         if (percentageCell) percentageCell.innerText = '-';
-        recalcularMatriz();
+        if (!skipRecalculate) recalcularMatriz();
         return;
     }
 
@@ -1357,11 +1661,14 @@ function validarYCalcular(input, maxCant, procKey, skipSave = false) {
 
         if (dateCell) {
             if (value > 0) {
-                const date = new Date().toLocaleDateString('es-PE', {
-                    day: '2-digit',
-                    month: 'short'
-                }).toUpperCase();
-                dateCell.innerHTML = `<span class="font-black text-slate-800">${date}</span>`;
+                const completionDate = row.dataset.fechaRealizacion || '';
+                const date = completionDate
+                    ? new Date(`${completionDate}T00:00:00`).toLocaleDateString('es-PE', {
+                        day: '2-digit',
+                        month: 'short'
+                    }).toUpperCase()
+                    : 'SIN FECHA';
+                dateCell.innerHTML = `<span class="font-black ${completionDate ? 'text-slate-800' : 'text-slate-400'}">${date}</span>`;
                 dateCell.className = 'px-1 py-1.5 text-center bg-slate-200 border-l border-slate-300 sticky-r2 pct-des';
             } else {
                 dateCell.innerHTML = '-';
@@ -1378,11 +1685,15 @@ function validarYCalcular(input, maxCant, procKey, skipSave = false) {
                 percentageCell.innerText = 'N/A';
                 percentageCell.className = `px-1 py-1 text-center w-[45px] font-bold text-slate-400 bg-slate-100 border-r border-slate-200 pct-${procKey} col-${procKey}`;
             }
-            input.classList.add('text-slate-300');
+            input.classList.add('is-not-applicable');
+            if (!input.parentElement.querySelector('.production-process-na-label')) {
+                input.insertAdjacentHTML('afterend', '<span class="production-process-na-label" aria-hidden="true">N/A</span>');
+            }
             const programmedCell = input.parentElement.previousElementSibling;
             if (programmedCell) programmedCell.innerText = '-';
         } else {
-            input.classList.remove('text-slate-300');
+            input.classList.remove('is-not-applicable');
+            input.parentElement.querySelector('.production-process-na-label')?.remove();
             const programmedCell = input.parentElement.previousElementSibling;
             if (programmedCell) programmedCell.innerText = maxCant;
 
@@ -1409,7 +1720,7 @@ function validarYCalcular(input, maxCant, procKey, skipSave = false) {
             value
         );
     }
-    recalcularMatriz();
+    if (!skipRecalculate) recalcularMatriz();
 }
 
 async function toggleAlertaFila(button) {
@@ -1526,6 +1837,12 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
     document.getElementById('det-desc').innerText = desc;
     document.getElementById('det-long').innerText = long + ' mm';
     document.getElementById('det-cant').innerText = cant;
+    const completionDateInput = document.getElementById('det-fecha-realizacion');
+    if (completionDateInput) {
+        const completionDate = currentDetalleRow.dataset.fechaRealizacion || '';
+        completionDateInput.value = completionDate;
+        completionDateInput.dataset.previous = completionDate;
+    }
 
     // Obtenemos los operarios
     const hiddenOperario = currentDetalleRow.querySelector('.input-operario');
@@ -1550,6 +1867,8 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
     const cardsContainer = document.getElementById('det-cards-procesos');
     if(tablaContainer) tablaContainer.innerHTML = '';
     if(cardsContainer) cardsContainer.innerHTML = '';
+    const processRows = [];
+    const assignmentCards = [];
 
     const nombresProcObj = {hab: 'Habilitado', arm: 'Armado', sol: 'Soldado', lim: 'Limpieza', lib: 'Liberación', gal: 'Galvanizado', are: 'Arenado', pin: 'Pintado'};
 
@@ -1561,16 +1880,16 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
             ? 'is-complete'
             : (estActual !== 'No requerido' ? 'is-progress' : '');
 
-        if(tablaContainer) tablaContainer.innerHTML = `<tr>
+        processRows.push(`<tr>
             <td>Abastecimiento</td>
             <td><span class="production-detail-process-status ${supplyStatusClass}"><i></i>${escapeHtml(estActual)}</span></td>
             <td>-</td><td>-</td><td>${porcTotal.toFixed(1)}%</td>
-        </tr>`;
+        </tr>`);
 
-        if(cardsContainer) cardsContainer.innerHTML = `<div class="production-detail-supply">
+        assignmentCards.push(`<div class="production-detail-supply">
             <strong>Estado de abastecimiento</strong>
             <span>${escapeHtml(estActual)}</span>
-        </div>`;
+        </div>`);
     } else {
         procesosProd.forEach(p => {
             if (p === 'des' || !activeProcs[p]) return;
@@ -1594,11 +1913,14 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
                             <b>Aplica al elemento</b>
                         </label>
                         ${!isNA ? `
-                        <label class="production-detail-operator">
-                            <span>Operarios</span>
-                            <textarea placeholder="Ej.: Ana, Luis, Carlos" onblur="guardarOpProceso('${p}', this.value)" maxlength="450" autocomplete="off">${escapeHtml(operatorName)}</textarea>
-                            <small>Separa varios nombres con coma.</small>
-                        </label>
+                        <div class="production-detail-operator">
+                            <span>Personal asignado</span>
+                            <button type="button" onclick="abrirSelectorPersonal('${p}')" class="production-detail-personnel-trigger">
+                                <strong>${operatorName ? escapeHtml(operatorName) : 'Seleccionar personal'}</strong>
+                                <span class="material-symbols-rounded" aria-hidden="true">expand_more</span>
+                            </button>
+                            <small>${operatorName ? 'Selecciona nuevamente para cambiar la asignación.' : 'Elige una persona registrada.'}</small>
+                        </div>
                         ` : `
                         <div class="production-detail-readonly"><span>Asignación</span><strong>Proceso omitido</strong></div>
                         `}`
@@ -1606,15 +1928,15 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
                         <strong>${isNA ? 'No aplica' : (operatorName ? escapeHtml(operatorName) : 'Sin operarios asignados')}</strong>
                     </div>`;
 
-                if(tablaContainer) tablaContainer.innerHTML += `<tr>
+                processRows.push(`<tr>
                     <td>${nombresProcObj[p]}</td>
                     <td><span class="production-detail-process-status ${statusClass}"><i></i>${txtEstado}</span></td>
                     <td>${isNA ? '-' : cant}</td>
                     <td>${isNA ? '-' : val}</td>
                     <td>${porcentajeLocal}</td>
-                </tr>`;
+                </tr>`);
 
-                if(cardsContainer) cardsContainer.innerHTML += `<article class="production-detail-assignment ${isNA ? 'is-disabled' : ''}">
+                assignmentCards.push(`<article class="production-detail-assignment ${isNA ? 'is-disabled' : ''}">
                     <div class="production-detail-assignment-heading">
                         <strong>${nombresProcObj[p]}</strong>
                         <span>${txtEstado} · ${porcentajeLocal}</span>
@@ -1622,10 +1944,13 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
                     <div class="production-detail-assignment-controls">
                         ${processControls}
                     </div>
-                </article>`;
+                </article>`);
             }
         });
     }
+
+    if (tablaContainer) tablaContainer.innerHTML = processRows.join('');
+    if (cardsContainer) cardsContainer.innerHTML = assignmentCards.join('');
 
     const overlay = document.getElementById('detalle-overlay'); const box = document.getElementById('detalle-modal-box');
     if(overlay && box) {
@@ -1657,6 +1982,44 @@ function cerrarDetalle() {
     }
 }
 
+async function guardarFechaElemento(input) {
+    if (!canEdit || !input || !currentDetalleRow?.dataset.id) return;
+    const elementRow = currentDetalleRow;
+    const previousValue = input.dataset.previous || '';
+    const nextValue = input.value || null;
+    input.disabled = true;
+
+    const saved = await encolarGuardadoComponente(
+        elementRow.dataset.id,
+        'fecha_realizacion',
+        nextValue,
+    );
+
+    if (saved) {
+        const storedValue = nextValue || '';
+        elementRow.dataset.fechaRealizacion = storedValue;
+        input.dataset.previous = storedValue;
+        const dispatchInput = elementRow.querySelector('.proc-des');
+        if (dispatchInput && Number(dispatchInput.value) > 0) {
+            validarYCalcular(
+                dispatchInput,
+                Number.parseFloat(elementRow.dataset.cant) || 0,
+                'des',
+                true,
+                true,
+            );
+        }
+        mostrarAlerta(
+            storedValue ? 'Fecha del elemento guardada.' : 'Fecha del elemento eliminada.',
+            'exito',
+        );
+    } else {
+        input.value = previousValue;
+    }
+
+    input.disabled = !canEdit;
+}
+
 
 function toggleNA(proc, isChecked, cant) {
     if (!canEdit) return;
@@ -1671,10 +2034,10 @@ function toggleNA(proc, isChecked, cant) {
 }
 
 async function guardarOpProceso(proc, nombre) {
-    if (!canEdit || !currentDetalleRow) return;
+    if (!canEdit || !currentDetalleRow) return false;
     const operatorRow = currentDetalleRow;
     const hiddenOperator = operatorRow.querySelector('.input-operario');
-    if (!hiddenOperator || !operatorRow.dataset.id) return;
+    if (!hiddenOperator || !operatorRow.dataset.id) return false;
 
     const operatorMap = parseOperarios(hiddenOperator.value);
     operatorMap[proc] = normalizeOperatorNames(nombre);
@@ -1689,8 +2052,18 @@ async function guardarOpProceso(proc, nombre) {
     );
     if (saved) {
         mostrarAlerta('Operarios actualizados.', 'exito');
+        abrirDetalle(
+            currentDetalleRow.querySelector('.btn-detalle'),
+            document.getElementById('det-marca').innerText,
+            document.getElementById('det-long').innerText.replace(' mm',''),
+            Number.parseFloat(document.getElementById('det-cant').innerText) || 0,
+            document.getElementById('det-desc').innerText,
+            currentDetalleRow.dataset.tipo
+        );
+        return true;
     } else {
         if (hiddenOperator.value === nextValue) hiddenOperator.value = previousValue;
+        return false;
     }
 }
 
@@ -1873,6 +2246,20 @@ function agregarMensajeAlDOM(msg) {
     const messageRow = document.createElement('div');
     messageRow.className = 'production-chat-message-row';
 
+    let avatar = null;
+    if (!esMio) {
+        avatar = document.createElement('span');
+        avatar.className = 'production-chat-avatar';
+        avatar.setAttribute('aria-hidden', 'true');
+        avatar.textContent = String(nameText)
+            .trim()
+            .split(/\s+/)
+            .slice(0, 2)
+            .map(part => part.charAt(0))
+            .join('')
+            .toUpperCase() || 'US';
+    }
+
     const bubble = document.createElement('div');
     bubble.className = 'production-chat-bubble';
     bubble.textContent = String(msg.mensaje ?? '');
@@ -1892,6 +2279,7 @@ function agregarMensajeAlDOM(msg) {
     }
 
     if (esMio && deleteButton) messageRow.appendChild(deleteButton);
+    if (avatar) messageRow.appendChild(avatar);
     messageRow.appendChild(bubble);
     if (!esMio && deleteButton) messageRow.appendChild(deleteButton);
 

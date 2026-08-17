@@ -175,8 +175,8 @@ else:
 db.init_app(app)
 migrate.init_app(app, db)
 limiter.init_app(app)
-csrf = CSRFProtect(app)
 configure_structured_logging(app)
+csrf = CSRFProtect(app)
 if is_production and app.config['RATELIMIT_STORAGE_URI'] == 'memory://':
     app.logger.warning('production_rate_limit_uses_local_memory')
 

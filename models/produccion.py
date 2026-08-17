@@ -54,6 +54,8 @@ class PackingList(db.Model):
         server_default='false',
     )
     fecha_archivado = db.Column(db.DateTime, nullable=True)
+    fecha_inicio_real = db.Column(db.Date, nullable=True)
+    fecha_termino_real = db.Column(db.Date, nullable=True)
     archivado_por_id = db.Column(
         db.Integer,
         db.ForeignKey('usuarios.id', ondelete='SET NULL'),
@@ -92,6 +94,16 @@ class PackingList(db.Model):
             'orden': self.orden,
             'version': self.version,
             'archivado': self.archivado,
+            'fecha_inicio_real': (
+                self.fecha_inicio_real.isoformat()
+                if self.fecha_inicio_real
+                else None
+            ),
+            'fecha_termino_real': (
+                self.fecha_termino_real.isoformat()
+                if self.fecha_termino_real
+                else None
+            ),
             'fecha_actualizacion': (
                 self.fecha_actualizacion.isoformat()
                 if self.fecha_actualizacion
@@ -166,15 +178,18 @@ class ComponenteOT(db.Model):
         default='Pendiente',
     )
     operario = db.Column(db.String(500), nullable=False, default='')
+    fecha_realizacion = db.Column(db.Date, nullable=True)
 
-    hab_real = db.Column(db.Integer, nullable=False, default=0)
-    arm_real = db.Column(db.Integer, nullable=False, default=0)
-    sol_real = db.Column(db.Integer, nullable=False, default=0)
-    lim_real = db.Column(db.Integer, nullable=False, default=0)
-    lib_real = db.Column(db.Integer, nullable=False, default=0)
-    gal_real = db.Column(db.Integer, nullable=False, default=0)
-    are_real = db.Column(db.Integer, nullable=False, default=0)
-    pin_real = db.Column(db.Integer, nullable=False, default=0)
+    # Una pieza nueva no debe asumir operaciones que quizá no necesita. Cada
+    # proceso se habilita explícitamente desde su ficha; -1 significa N/A.
+    hab_real = db.Column(db.Integer, nullable=False, default=-1)
+    arm_real = db.Column(db.Integer, nullable=False, default=-1)
+    sol_real = db.Column(db.Integer, nullable=False, default=-1)
+    lim_real = db.Column(db.Integer, nullable=False, default=-1)
+    lib_real = db.Column(db.Integer, nullable=False, default=-1)
+    gal_real = db.Column(db.Integer, nullable=False, default=-1)
+    are_real = db.Column(db.Integer, nullable=False, default=-1)
+    pin_real = db.Column(db.Integer, nullable=False, default=-1)
     des_real = db.Column(db.Integer, nullable=False, default=0)
     alerta = db.Column(db.Boolean, nullable=False, default=False)
 
@@ -189,6 +204,11 @@ class ComponenteOT(db.Model):
             'tipo': self.tipo,
             'estado_suministro': self.estado_suministro,
             'operario': self.operario,
+            'fecha_realizacion': (
+                self.fecha_realizacion.isoformat()
+                if self.fecha_realizacion
+                else None
+            ),
             'hab_real': self.hab_real,
             'arm_real': self.arm_real,
             'sol_real': self.sol_real,
@@ -199,6 +219,47 @@ class ComponenteOT(db.Model):
             'pin_real': self.pin_real,
             'des_real': self.des_real,
             'alerta': self.alerta,
+        }
+
+
+class PersonalProduccion(db.Model):
+    """Directorio único de personal disponible para asignaciones de planta."""
+
+    __tablename__ = 'personal_produccion'
+    __table_args__ = (
+        db.UniqueConstraint(
+            'nombre_clave',
+            name='uq_personal_produccion_nombre_clave',
+        ),
+        db.Index('ix_personal_produccion_activo_nombre', 'activo', 'nombre'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(120), nullable=False)
+    nombre_clave = db.Column(db.String(160), nullable=False)
+    activo = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True,
+        server_default='true',
+    )
+    fecha_creacion = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=utc_now,
+    )
+    fecha_actualizacion = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'nombre': self.nombre,
+            'activo': self.activo,
         }
 
 

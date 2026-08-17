@@ -3,11 +3,14 @@ import os
 import re
 import traceback
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
+from googleapiclient.errors import HttpError
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from werkzeug.utils import secure_filename
 from utils.auth import roles_required
 from db_config import db
 from models.catalogo_ot import CatalogoOT
@@ -19,6 +22,11 @@ from utils.production_metrics import (
     process_settings,
     quantity_weighted_average,
 )
+from utils.production_schema import ensure_production_storage_schema
+from utils.tracking_schema import (
+    TrackingSchemaError,
+    ensure_tracking_storage_schema,
+)
 
 gestion_ot_bp = Blueprint('gestion_ot_bp', __name__, template_folder='../templates')
 
@@ -26,7 +34,21 @@ LIMA_TIMEZONE = timezone(timedelta(hours=-5), name='America/Lima')
 ALLOWED_OT_STATES = {'En Proceso', 'No Empezado', 'Terminado'}
 OT_CODE_PATTERN = re.compile(r'^[A-Z0-9][A-Z0-9._/-]{2,49}$')
 MAX_TRACKING_PHOTOS = max(1, int(os.environ.get('MAX_TRACKING_PHOTOS', '12')))
+MAX_TRACKING_PHOTO_UPLOAD_BYTES = max(
+    512 * 1024,
+    int(os.environ.get(
+        'MAX_TRACKING_PHOTO_UPLOAD_BYTES',
+        str(3 * 1024 * 1024),
+    )),
+)
 DRIVE_IMAGE_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,150}$')
+ALLOWED_TRACKING_PHOTO_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+TRACKING_PHOTO_MIME_TYPES = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+}
 
 
 def _validation_error(message, status=400):
@@ -242,7 +264,10 @@ def eliminar_ot(id):
 @login_required
 def produccion(id):
     if current_user.rol == 'viewer':
-        return redirect(url_for('gestion_ot_bp.seguimiento', id=id))
+        ot = db.session.get(CatalogoOT, id)
+        if not ot or ot.archivado:
+            return "OT no encontrada", 404
+        return redirect(url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot))
 
     return _render_production(id)
 
@@ -305,24 +330,41 @@ def actualizar_fecha_termino(id):
         return jsonify({'success': False, 'error': 'No se pudo actualizar la fecha de término.'}), 500
 
 
-@gestion_ot_bp.route('/seguimiento/<int:id>')
+def _render_tracking_page(work_order):
+    tracking = _build_tracking_summary(work_order.item)
+    return render_template(
+        'seguimiento.html',
+        ot=work_order,
+        tracking=tracking,
+        max_tracking_photos=MAX_TRACKING_PHOTOS,
+    )
+
+
+@gestion_ot_bp.route('/seguimiento/ot/<path:ot_code>')
 @login_required
-def seguimiento(id):
+def seguimiento(ot_code):
     try:
-        ot = db.session.get(CatalogoOT, id)
+        normalized_code = str(ot_code or '').strip().upper()
+        ot = CatalogoOT.query.filter_by(ot=normalized_code, archivado=False).first()
         if not ot or ot.archivado:
             return "OT no encontrada", 404
 
-        tracking = _build_tracking_summary(id)
-        return render_template(
-            'seguimiento.html',
-            ot=ot,
-            tracking=tracking,
-            max_tracking_photos=MAX_TRACKING_PHOTOS,
-        )
+        return _render_tracking_page(ot)
     except Exception:
         traceback.print_exc()
         return "Error interno del servidor", 500
+
+
+@gestion_ot_bp.route('/seguimiento/<int:id>')
+@login_required
+def seguimiento_legacy(id):
+    ot = db.session.get(CatalogoOT, id)
+    if not ot or ot.archivado:
+        return "OT no encontrada", 404
+    return redirect(
+        url_for('gestion_ot_bp.seguimiento', ot_code=ot.ot),
+        code=302,
+    )
 
 
 @gestion_ot_bp.route('/api/seguimiento/<int:id>')
@@ -351,11 +393,147 @@ def _tracking_photo_dict(photo):
     return data
 
 
+def _read_tracking_photo_upload(file_storage):
+    original_name = Path(str(file_storage.filename or '')).name.strip()
+    extension = Path(original_name).suffix.lower()
+    if not original_name or extension not in ALLOWED_TRACKING_PHOTO_EXTENSIONS:
+        raise ValueError('Sube una fotografía JPG, PNG o WEBP.')
+
+    safe_name = secure_filename(original_name)
+    if not safe_name:
+        raise ValueError('El nombre de la fotografía no es válido.')
+
+    content = file_storage.stream.read(MAX_TRACKING_PHOTO_UPLOAD_BYTES + 1)
+    if not content:
+        raise ValueError('La fotografía está vacía.')
+    if len(content) > MAX_TRACKING_PHOTO_UPLOAD_BYTES:
+        raise OverflowError(
+            f'La fotografía supera el límite de '
+            f'{MAX_TRACKING_PHOTO_UPLOAD_BYTES // (1024 * 1024)} MB.'
+        )
+    return safe_name, TRACKING_PHOTO_MIME_TYPES[extension], content
+
+
+@gestion_ot_bp.post('/api/seguimiento/<int:id>/fotos/subir')
+@login_required
+@roles_required('admin')
+def subir_foto_seguimiento(id):
+    ot = db.session.get(CatalogoOT, id)
+    if ot is None or ot.archivado:
+        return _validation_error('La OT no existe.', 404)
+
+    file_storage = request.files.get('file')
+    if file_storage is None:
+        return _validation_error('Selecciona una fotografía para subir.')
+
+    try:
+        filename, mime_type, content = _read_tracking_photo_upload(file_storage)
+    except OverflowError as error:
+        return _validation_error(str(error), 413)
+    except ValueError as error:
+        return _validation_error(str(error))
+
+    from controllers.reporte_fotografico_controller import (
+        DRIVE_PHOTOS_FOLDER_NAME,
+        ensure_ot_category_folder,
+        get_drive_service,
+        invalidate_photo_count_cache,
+        upload_drive_file,
+    )
+
+    service = get_drive_service()
+    if service is None:
+        return _validation_error('No fue posible conectar con Google Drive.', 503)
+
+    try:
+        folder = ensure_ot_category_folder(
+            service,
+            str(ot.ot).strip(),
+            DRIVE_PHOTOS_FOLDER_NAME,
+        )
+        uploaded = upload_drive_file(
+            service,
+            folder['category_folder_id'],
+            filename,
+            mime_type,
+            content,
+        )
+        invalidate_photo_count_cache(id)
+
+        try:
+            db.session.add(BitacoraOT(
+                ot_id=id,
+                usuario_id=current_user.id,
+                usuario_nombre=getattr(current_user, 'nombre', 'Administrador'),
+                mensaje=f'Subió {filename} a FOTOGRAFIAS en Google Drive.',
+                tipo='audit',
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                'tracking_photo_upload_audit_failed',
+                extra={'ot_id': id},
+            )
+
+        return jsonify({
+            'success': True,
+            'photo': {
+                'id': uploaded['id'],
+                'nombre': uploaded.get('name') or filename,
+            },
+        }), 201
+    except HttpError as error:
+        status = int(getattr(getattr(error, 'resp', None), 'status', 0) or 0)
+        current_app.logger.warning(
+            'tracking_photo_drive_upload_rejected',
+            extra={'ot_id': id, 'status': status},
+        )
+        if status in {401, 403}:
+            return _validation_error(
+                'La cuenta de servicio necesita permiso de Editor en la carpeta de Drive.',
+                403,
+            )
+        return _validation_error('Google Drive rechazó la fotografía.', 502)
+    except ValueError as error:
+        return _validation_error(str(error), 400)
+    except Exception:
+        current_app.logger.exception(
+            'tracking_photo_upload_failed',
+            extra={'ot_id': id},
+        )
+        return _validation_error(
+            'No fue posible subir la fotografía a Google Drive.',
+            502,
+        )
+
+
 @gestion_ot_bp.put('/api/seguimiento/<int:id>/fotos')
 @login_required
 @roles_required('admin')
 def guardar_fotos_seguimiento(id):
-    ot = db.session.get(CatalogoOT, id)
+    try:
+        ensure_tracking_storage_schema()
+        ot = db.session.get(CatalogoOT, id)
+    except TrackingSchemaError:
+        db.session.rollback()
+        return _validation_error(
+            'No fue posible preparar el almacenamiento de fotografías. '
+            'Vuelve a intentarlo en un momento.',
+            503,
+        )
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception(
+            'tracking_photo_lookup_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': id},
+        )
+        return _validation_error(
+            'No fue posible consultar la OT antes de guardar las fotografías.',
+            500,
+        )
+
     if ot is None or ot.archivado:
         return _validation_error('La OT no existe.', 404)
 
@@ -434,9 +612,13 @@ def guardar_fotos_seguimiento(id):
             'success': True,
             'photos': [_tracking_photo_dict(photo) for photo in saved_photos],
         })
-    except Exception:
+    except Exception as error:
         db.session.rollback()
-        current_app.logger.exception('tracking_photos_save_failed', extra={'ot_id': id})
+        current_app.logger.exception(
+            'tracking_photos_save_failed exception_type=%s',
+            type(error).__name__,
+            extra={'ot_id': id},
+        )
         return jsonify({
             'success': False,
             'error': 'No fue posible guardar las fotografías de seguimiento.',
@@ -484,6 +666,7 @@ def seguimiento_photo_image(photo_id):
 
 def _render_production(id):
     try:
+        ensure_production_storage_schema()
         ot = db.session.get(CatalogoOT, id)
         if not ot or ot.archivado:
             return "OT no encontrada", 404
@@ -551,7 +734,71 @@ def _tracking_audit_dict(event):
     return data
 
 
+def _tracking_process_breakdown(components, active_processes, weights):
+    """Build the exact per-process state used by each tracking lot."""
+    breakdown = []
+    for key, name, field, _, accent_class in TRACKING_PROCESSES:
+        is_active = bool(active_processes.get(key, False))
+        ratios = []
+        advanced_units = 0.0
+        total_units = 0
+        completed_count = 0
+        in_progress_count = 0
+        pending_count = 0
+
+        for component in components:
+            quantity = max(int(component.cantidad or 0), 0)
+            ratio = _clamped_ratio(getattr(component, field), quantity)
+            if ratio is None:
+                continue
+
+            ratios.append((ratio * 100.0, quantity))
+            total_units += quantity
+            advanced_units += ratio * quantity
+            if ratio >= 0.9995:
+                completed_count += 1
+            elif ratio > 0:
+                in_progress_count += 1
+            else:
+                pending_count += 1
+
+        progress = round(quantity_weighted_average(ratios), 1) if ratios and is_active else 0.0
+        if not is_active:
+            status = 'No aplica'
+        elif not ratios:
+            status = 'Sin datos'
+        elif progress >= 99.95:
+            status = 'Completado'
+        elif progress > 0:
+            status = 'En proceso'
+        else:
+            status = 'Pendiente'
+
+        rounded_advanced_units = round(advanced_units, 1)
+        if rounded_advanced_units.is_integer():
+            rounded_advanced_units = int(rounded_advanced_units)
+
+        breakdown.append({
+            'key': key,
+            'name': name,
+            'progress': progress,
+            'status': status,
+            'accent_class': accent_class,
+            'active': is_active,
+            'weight': weights.get(key, 0),
+            'advanced_units': rounded_advanced_units,
+            'total_units': total_units,
+            'completed_count': completed_count,
+            'in_progress_count': in_progress_count,
+            'pending_count': pending_count,
+            'applicable_count': len(ratios),
+        })
+    return breakdown
+
+
 def _build_tracking_summary(ot_id):
+    ensure_tracking_storage_schema()
+    ensure_production_storage_schema()
     work_order = db.session.get(CatalogoOT, ot_id)
     if work_order is None or work_order.archivado:
         raise ValueError('La OT no existe.')
@@ -618,15 +865,36 @@ def _build_tracking_summary(ot_id):
                 })
                 element_detail['process_keys'].add(process_key)
 
+        lot_progress = round(
+            quantity_weighted_average(progress_with_quantity), 1
+        ) if component_progress else 0.0
+        completed_count = sum(progress >= 99.95 for progress in component_progress)
+        in_progress_count = sum(0 < progress < 99.95 for progress in component_progress)
+        pending_count = sum(progress <= 0 for progress in component_progress)
+        if not component_progress:
+            lot_status = 'Sin datos'
+        elif completed_count == len(component_progress):
+            lot_status = 'Completado'
+        elif lot_progress > 0:
+            lot_status = 'En proceso'
+        else:
+            lot_status = 'Pendiente'
+
         lots.append({
             'id': packing_list.id,
             'name': packing_list.nombre,
-            'progress': round(
-                quantity_weighted_average(progress_with_quantity), 1
-            ) if component_progress else 0.0,
+            'progress': lot_progress,
+            'status': lot_status,
             'component_count': len(fabrication),
             'unit_count': sum(max(component.cantidad or 0, 0) for component in fabrication),
-            'completed_count': sum(progress >= 99.95 for progress in component_progress),
+            'completed_count': completed_count,
+            'in_progress_count': in_progress_count,
+            'pending_count': pending_count,
+            'processes': _tracking_process_breakdown(
+                fabrication,
+                active_processes,
+                weights,
+            ),
         })
 
     process_names = {key: name for key, name, _, _, _ in TRACKING_PROCESSES}

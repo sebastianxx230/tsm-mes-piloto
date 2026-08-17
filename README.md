@@ -105,10 +105,22 @@ comprueba Flask y la conexión a PostgreSQL.
 
 ## Google Drive y conteo de fotos
 
-La cuenta de servicio debe tener acceso de lectura a las carpetas padre. El
+La cuenta de servicio debe tener permiso de **Editor** en las carpetas padre.
+Para las OTs de 2026, configure `DRIVE_PARENT_FOLDER_ID_2026` con la raíz anual;
+la aplicación usa esta estructura y crea las carpetas faltantes al subir:
+
+```text
+OT_2026-00XX/
+├── DOCUMENTOS/
+├── FOTOGRAFIAS/
+└── PLANOS/
+```
+
+El
 catálogo no consulta las OTs al cargar: el conteo se solicita al pasar el cursor
 o enfocar el icono fotográfico y se conserva durante cinco minutos por defecto.
-Se cuentan imágenes únicas de la carpeta de la OT y de sus subcarpetas directas.
+Las OTs nuevas leen fotografías exclusivamente desde `FOTOGRAFIAS`; las carpetas
+con la estructura anterior continúan disponibles como respaldo de compatibilidad.
 
 ## Operación
 

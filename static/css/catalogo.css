@@ -23,6 +23,17 @@
 }
 
 .catalog-search { min-width: 0; }
+.catalog-search .search-clean,
+.catalog-search .search-clean:focus,
+.catalog-search .search-clean:focus-visible {
+    min-width: 0;
+    padding: 0;
+    border: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    appearance: none;
+}
 
 .catalog-toolbar-actions {
     display: flex;
