@@ -27,49 +27,84 @@ PROCESS_COLUMNS = (
 
 
 def upgrade():
-    op.add_column(
-        'packing_lists',
-        sa.Column('fecha_inicio_real', sa.Date(), nullable=True),
-    )
-    op.add_column(
-        'packing_lists',
-        sa.Column('fecha_termino_real', sa.Date(), nullable=True),
-    )
+    connection = op.get_bind()
+    inspector = sa.inspect(connection)
+    packing_columns = {
+        column['name']
+        for column in inspector.get_columns('packing_lists')
+    }
+    if 'fecha_inicio_real' not in packing_columns:
+        op.add_column(
+            'packing_lists',
+            sa.Column('fecha_inicio_real', sa.Date(), nullable=True),
+        )
+    if 'fecha_termino_real' not in packing_columns:
+        op.add_column(
+            'packing_lists',
+            sa.Column('fecha_termino_real', sa.Date(), nullable=True),
+        )
 
-    op.create_table(
-        'personal_produccion',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('nombre', sa.String(length=120), nullable=False),
-        sa.Column('nombre_clave', sa.String(length=160), nullable=False),
-        sa.Column(
-            'activo',
-            sa.Boolean(),
-            server_default=sa.text('true'),
-            nullable=False,
-        ),
-        sa.Column(
-            'fecha_creacion',
-            sa.DateTime(),
-            server_default=sa.text('NOW()'),
-            nullable=False,
-        ),
-        sa.Column(
-            'fecha_actualizacion',
-            sa.DateTime(),
-            server_default=sa.text('NOW()'),
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint(
-            'nombre_clave',
-            name='uq_personal_produccion_nombre_clave',
-        ),
-    )
-    op.create_index(
-        'ix_personal_produccion_activo_nombre',
-        'personal_produccion',
-        ['activo', 'nombre'],
-    )
+    if 'personal_produccion' not in inspector.get_table_names():
+        op.create_table(
+            'personal_produccion',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('nombre', sa.String(length=120), nullable=False),
+            sa.Column('nombre_clave', sa.String(length=160), nullable=False),
+            sa.Column(
+                'activo',
+                sa.Boolean(),
+                server_default=sa.text('true'),
+                nullable=False,
+            ),
+            sa.Column(
+                'fecha_creacion',
+                sa.DateTime(),
+                server_default=sa.text('NOW()'),
+                nullable=False,
+            ),
+            sa.Column(
+                'fecha_actualizacion',
+                sa.DateTime(),
+                server_default=sa.text('NOW()'),
+                nullable=False,
+            ),
+            sa.PrimaryKeyConstraint('id'),
+            sa.UniqueConstraint(
+                'nombre_clave',
+                name='uq_personal_produccion_nombre_clave',
+            ),
+        )
+        op.create_index(
+            'ix_personal_produccion_activo_nombre',
+            'personal_produccion',
+            ['activo', 'nombre'],
+        )
+    else:
+        personnel_inspector = sa.inspect(connection)
+        unique_constraints = {
+            constraint['name']
+            for constraint in personnel_inspector.get_unique_constraints(
+                'personal_produccion'
+            )
+        }
+        if 'uq_personal_produccion_nombre_clave' not in unique_constraints:
+            op.create_unique_constraint(
+                'uq_personal_produccion_nombre_clave',
+                'personal_produccion',
+                ['nombre_clave'],
+            )
+        indexes = {
+            index['name']
+            for index in personnel_inspector.get_indexes(
+                'personal_produccion'
+            )
+        }
+        if 'ix_personal_produccion_activo_nombre' not in indexes:
+            op.create_index(
+                'ix_personal_produccion_activo_nombre',
+                'personal_produccion',
+                ['activo', 'nombre'],
+            )
 
     for column in PROCESS_COLUMNS:
         op.alter_column(
