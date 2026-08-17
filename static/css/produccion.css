@@ -258,7 +258,6 @@ body:has(.production-page) main { padding-bottom: 0; }
     justify-content: center;
     padding: 18px;
     background: rgba(15, 23, 42, 0.66);
-    backdrop-filter: blur(3px);
     transition: opacity 180ms ease;
 }
 
@@ -586,7 +585,7 @@ body.production-detail-open { overflow: hidden !important; }
 
 
 /* Etapa 2.1: confirmación, fechas y múltiples operarios */
-.production-confirm-overlay { position: fixed; inset: 0; z-index: 10050; display: grid; place-items: center; padding: 18px; background: rgba(15,23,42,.55); backdrop-filter: blur(5px); transition: opacity .18s ease; }
+.production-confirm-overlay { position: fixed; inset: 0; z-index: 10050; display: grid; place-items: center; padding: 18px; background: rgba(15,23,42,.55); transition: opacity .18s ease; }
 .production-confirm-overlay.hidden { display: none; }
 .production-confirm-dialog { width: min(520px, 100%); display: grid; grid-template-columns: 48px 1fr; gap: 16px; padding: 22px; border: 1px solid #dbe4ef; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(15,23,42,.28); transition: transform .18s ease; }
 .production-confirm-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 13px; background: #eff6ff; color: #2563eb; }
@@ -626,31 +625,62 @@ body.production-detail-open { overflow: hidden !important; }
     cursor: pointer;
     text-align: left;
 }
+
+.production-detail-completion-date {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 3px 10px;
+    max-width: 270px;
+    margin-top: 11px;
+    padding-top: 9px;
+    border-top: 1px solid #e5eaf1;
+}
+
+.production-detail-completion-date > span {
+    color: #68788d;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.production-detail-completion-date input {
+    width: 124px;
+    height: 29px;
+    padding: 0 7px;
+    border: 1px solid #cfd8e4;
+    border-radius: 6px;
+    outline: 0;
+    background: #ffffff;
+    color: #26364d;
+    font-size: 10px;
+    font-weight: 750;
+}
+
+.production-detail-completion-date input:focus {
+    border-color: #5879a6;
+    box-shadow: 0 0 0 2px rgba(49, 95, 155, .08);
+}
+
+.production-detail-completion-date input:disabled {
+    background: #f6f8fb;
+    color: #66758a;
+}
+
+.production-detail-completion-date small {
+    grid-column: 1 / -1;
+    color: #93a0b1;
+    font-size: 8px;
+    font-weight: 600;
+}
 .production-detail-personnel-trigger:hover { border-color: #9fb2c9; background: #f8fafc; }
 .production-detail-personnel-trigger strong { overflow: hidden; font-size: 9.5px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .production-detail-personnel-trigger .material-symbols-rounded { flex: 0 0 auto; color: #718096; font-size: 17px; }
 
-.production-new-lot-period { margin-top: 18px; padding-top: 15px; border-top: 1px solid #e2e8f0; }
-.production-new-lot-period-copy { display: flex; flex-direction: column; gap: 3px; }
-.production-new-lot-period-copy strong { color: #334155; font-size: 11px; font-weight: 850; }
-.production-new-lot-period-copy span { color: #8794a6; font-size: 9.5px; font-weight: 600; }
-.production-new-lot-period-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 11px; }
-.production-new-lot-period-fields label { color: #64748b; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-.production-new-lot-period-fields input { width: 100%; height: 36px; margin-top: 5px; padding: 0 9px; border: 1px solid #cfd8e4; border-radius: 7px; outline: 0; background: #fff; color: #334155; font-size: 11px; font-weight: 750; }
-.production-new-lot-period-fields input:focus { border-color: #5879a6; box-shadow: 0 0 0 2px rgba(49,95,155,.08); }
-
 .production-table-context { display: flex; min-width: 0; align-items: center; gap: 10px; }
-.production-lot-period { display: flex; min-height: 36px; align-items: center; gap: 8px; padding: 0 9px; border: 1px solid #d7e0ea; border-radius: 7px; background: #ffffff; color: #68778b; white-space: nowrap; }
-.production-lot-period > span { padding-right: 8px; border-right: 1px solid #e3e9f0; color: #47586e; font-size: 8.5px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
-.production-lot-period label { display: inline-flex; align-items: center; gap: 5px; font-size: 8.5px; font-weight: 750; }
-.production-lot-period input { width: 108px; height: 27px; padding: 0 4px; border: 0; border-bottom: 1px solid #d7e0ea; outline: 0; background: transparent; color: #334155; font-size: 9.5px; font-weight: 750; }
-.production-lot-period input:focus { border-bottom-color: #5879a6; }
-.production-lot-period i { color: #a6b1bf; font-style: normal; }
-.production-lot-period button { min-height: 27px; padding: 0 8px; border: 1px solid #c9d4e1; border-radius: 5px; background: #f8fafc; color: #40536a; font-size: 8.5px; font-weight: 800; }
-.production-lot-period button:hover { border-color: #9fb2c9; background: #eef2f7; }
-.production-lot-period button:disabled { cursor: wait; opacity: .55; }
 
-.production-personnel-overlay { position: fixed; inset: 0; z-index: 1000012; display: grid; place-items: center; padding: 18px; background: rgba(15,23,42,.58); backdrop-filter: blur(3px); transition: opacity 180ms ease; }
+.production-personnel-overlay { position: fixed; inset: 0; z-index: 1000012; display: grid; place-items: center; padding: 18px; background: rgba(15,23,42,.58); transition: opacity 180ms ease; }
 .production-personnel-overlay.hidden { display: none !important; }
 .production-personnel-dialog { display: flex; width: min(540px, 96vw); max-height: min(720px, 92vh); flex-direction: column; overflow: hidden; border: 1px solid #d6dee9; border-radius: 12px; background: #fff; box-shadow: 0 28px 80px rgba(15,23,42,.3); transition: transform 180ms ease; }
 .production-personnel-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid #e1e7ef; }
@@ -706,7 +736,6 @@ body.production-detail-open { overflow: hidden !important; }
 
 @media (max-width: 1080px) {
     .production-table-context { width: 100%; align-items: stretch; flex-direction: column; }
-    .production-lot-period { width: fit-content; max-width: 100%; overflow-x: auto; }
 }
 
 @media (max-width: 760px) {
@@ -719,10 +748,6 @@ body.production-detail-open { overflow: hidden !important; }
     .production-date-editable input { width: 100%; }
     .production-header-button { width: 100%; min-width: 0; }
     .production-chat-context-status { display: none; }
-    .production-lot-period { width: 100%; align-items: flex-start; flex-wrap: wrap; padding: 8px; white-space: normal; }
-    .production-lot-period > span { width: 100%; padding: 0 0 6px; border-right: 0; border-bottom: 1px solid #e3e9f0; }
-    .production-lot-period label { flex: 1; flex-direction: column; align-items: flex-start; }
-    .production-lot-period input { width: 100%; }
     .production-personnel-directory { grid-template-columns: 1fr; }
 }
 

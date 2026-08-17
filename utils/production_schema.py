@@ -1,8 +1,8 @@
 """Runtime guard for additive production-pilot schema changes.
 
 Alembic remains the source of truth. Vercel has no release phase in this Flask
-deployment, so the guard creates the personnel table and nullable period
-columns when a production request reaches an older pilot database.
+deployment, so the guard creates additive production columns and tables when
+a request reaches an older pilot database.
 """
 
 from threading import Lock
@@ -11,13 +11,16 @@ from flask import current_app
 from sqlalchemy import inspect, text
 
 from db_config import db
-from models.produccion import PackingList, PersonalProduccion
+from models.produccion import ComponenteOT, PackingList, PersonalProduccion
 
 
 POSTGRES_ADVISORY_LOCK_ID = 725_026_817
 PACKING_LIST_DATE_COLUMNS = {
     'fecha_inicio_real': 'DATE',
     'fecha_termino_real': 'DATE',
+}
+COMPONENT_DATE_COLUMNS = {
+    'fecha_realizacion': 'DATE',
 }
 
 _schema_lock = Lock()
@@ -33,7 +36,7 @@ def _validate_schema(connection):
     tables = set(inspector.get_table_names())
     if PersonalProduccion.__tablename__ not in tables:
         raise ProductionSchemaError(
-            'El padrón de personal todavía no está disponible.'
+            'El directorio de personal todavía no está disponible.'
         )
 
     packing_columns = {
@@ -44,6 +47,17 @@ def _validate_schema(connection):
     if missing:
         raise ProductionSchemaError(
             'El esquema de lotes tiene fechas pendientes: '
+            + ', '.join(missing)
+        )
+
+    component_columns = {
+        column['name']
+        for column in inspector.get_columns(ComponenteOT.__tablename__)
+    }
+    missing = sorted(set(COMPONENT_DATE_COLUMNS) - component_columns)
+    if missing:
+        raise ProductionSchemaError(
+            'El esquema de elementos tiene fechas pendientes: '
             + ', '.join(missing)
         )
 
@@ -94,6 +108,23 @@ def ensure_production_storage_schema():
                     ))
                     repaired.append(
                         f'{PackingList.__tablename__}.{column_name}'
+                    )
+
+                component_columns = {
+                    column['name']
+                    for column in inspect(connection).get_columns(
+                        ComponenteOT.__tablename__
+                    )
+                }
+                for column_name, sql_type in COMPONENT_DATE_COLUMNS.items():
+                    if column_name in component_columns:
+                        continue
+                    connection.execute(text(
+                        f'ALTER TABLE {ComponenteOT.__tablename__} '
+                        f'ADD COLUMN {column_name} {sql_type}'
+                    ))
+                    repaired.append(
+                        f'{ComponenteOT.__tablename__}.{column_name}'
                     )
 
                 _validate_schema(connection)

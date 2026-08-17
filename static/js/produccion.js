@@ -15,12 +15,12 @@ let currentPlId = null;
 let currentPlName = "";
 let currentPlVersion = null;
 let currentPlEtag = null;
-let currentPlStartDate = '';
-let currentPlEndDate = '';
 let autoSyncInterval = null;
 let currentDetalleRow = null;
 let lastDetalleTrigger = null;
 let personnelCatalog = [];
+let personnelCatalogLoaded = false;
+let personnelCatalogRequest = null;
 let personnelSelectorProcess = null;
 let reopenSelectorAfterPersonnel = false;
 
@@ -37,7 +37,7 @@ let pendingSaveConfirmation = null;
 const cellSaveTimers = new Map();
 let cellSaveQueue = Promise.resolve();
 let processConfigSaveQueue = Promise.resolve();
-const AUTO_SYNC_INTERVAL_MS = 12000;
+const AUTO_SYNC_INTERVAL_MS = 30000;
 const MESSAGE_SYNC_INTERVAL_MS = 15000;
 const CELL_SAVE_DELAY_MS = 650;
 
@@ -94,6 +94,17 @@ function isChatOpen() {
     return Boolean(drawer && !drawer.classList.contains('translate-x-full'));
 }
 
+function isProductionDialogOpen() {
+    return [
+        'detalle-overlay',
+        'personnel-selector-overlay',
+        'personal-master-overlay',
+    ].some(id => {
+        const element = document.getElementById(id);
+        return element && !element.classList.contains('hidden');
+    });
+}
+
 function setImportBusy(isBusy) {
     importSaveInFlight = isBusy;
     const button = document.getElementById('btn-guardar-avances');
@@ -136,7 +147,8 @@ function stableComponentsFingerprint(components) {
         alerta: Boolean(component.alerta),
         tipo: String(component.tipo || 'fab'),
         estado_suministro: String(component.estado_suministro || 'No requerido'),
-        operario: String(component.operario || '').trim()
+        operario: String(component.operario || '').trim(),
+        fecha_realizacion: String(component.fecha_realizacion || '')
     })));
 }
 
@@ -227,7 +239,6 @@ document.addEventListener("DOMContentLoaded", () => {
         aplicarConfiguracionProcesosUI();
         actualizarColorFecha();
         cargarTabs();
-        cargarPersonalProduccion();
         iniciarAutoSync();
         configurarDetalleElemento();
         configurarNavegacionSegura();
@@ -237,7 +248,7 @@ document.addEventListener("DOMContentLoaded", () => {
         window.addEventListener('resize', programarAjusteAlturaMatriz);
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) return;
-            if (currentPlId && !hasPendingImport && !hayGuardadosCeldaPendientes()) sincronizarComponentesBD();
+            if (currentPlId && !isProductionDialogOpen() && !hasPendingImport && !hayGuardadosCeldaPendientes()) sincronizarComponentesBD();
             if (isChatOpen()) cargarMensajes();
         });
         window.addEventListener('pagehide', () => {
@@ -314,7 +325,7 @@ function configurarDetalleElemento() {
         if (event.target === personnelSelector) cerrarSelectorPersonal();
     });
     personnelMaster?.addEventListener('click', event => {
-        if (event.target === personnelMaster) cerrarPadronPersonal();
+        if (event.target === personnelMaster) cerrarDirectorioPersonal();
     });
 
     document.addEventListener('keydown', (event) => {
@@ -324,7 +335,7 @@ function configurarDetalleElemento() {
             return;
         }
         if (personnelMaster && !personnelMaster.classList.contains('hidden')) {
-            cerrarPadronPersonal();
+            cerrarDirectorioPersonal();
             return;
         }
         if (!overlay.classList.contains('hidden')) cerrarDetalle();
@@ -357,12 +368,6 @@ function abrirModalPL(modalId, boxId, inputId) {
     const modal = document.getElementById(modalId);
     const box = document.getElementById(boxId);
     document.getElementById(inputId).value = '';
-    if (modalId === 'modal-nuevo-pl') {
-        const startInput = document.getElementById('input-nuevo-pl-inicio');
-        const endInput = document.getElementById('input-nuevo-pl-termino');
-        if (startInput) startInput.value = '';
-        if (endInput) endInput.value = '';
-    }
     modal.classList.remove('hidden');
     setTimeout(() => { modal.classList.remove('opacity-0'); box.classList.remove('scale-95'); document.getElementById(inputId).focus(); }, 10);
 }
@@ -431,8 +436,6 @@ async function cargarTabs() {
                 const listedVersion = Number(pl.version || 1);
                 if (Number(previousId) !== plId) currentPlEtag = null;
                 currentPlVersion = Number.isFinite(listedVersion) ? listedVersion : 1;
-                currentPlStartDate = String(pl.fecha_inicio_real || '');
-                currentPlEndDate = String(pl.fecha_termino_real || '');
             }
 
             const css = isActive
@@ -449,8 +452,6 @@ async function cargarTabs() {
             html += `<button onclick="abrirModalPL('modal-nuevo-pl', 'box-nuevo-pl', 'input-nuevo-pl')" class="mb-1 ml-1 flex shrink-0 items-center gap-1 rounded-md border border-dashed border-blue-300 bg-white px-3 py-2 text-[12px] font-bold text-blue-700 transition-colors hover:bg-blue-50"><span class="material-symbols-rounded text-[16px]">add</span> Lista</button>`;
         }
         container.innerHTML = html;
-        actualizarPeriodoLoteUI();
-
         if (currentPlId) {
             await cargarComponentesTab({ force: true });
         }
@@ -485,18 +486,11 @@ async function guardarNuevoPL() {
     if (!canEdit) return;
     const input = document.getElementById('input-nuevo-pl');
     const nombre = input.value.trim().toUpperCase();
-    const startDate = document.getElementById('input-nuevo-pl-inicio')?.value || '';
-    const endDate = document.getElementById('input-nuevo-pl-termino')?.value || '';
     if (!nombre) {
         mostrarAlerta("Debes ingresar un nombre.", "info");
         input.focus();
         return;
     }
-    if (startDate && endDate && endDate < startDate) {
-        mostrarAlerta('La fecha de término no puede ser anterior al inicio.', 'error');
-        return;
-    }
-
     try {
         const res = await fetch('/api/produccion/packing_lists', {
             method: 'POST',
@@ -506,9 +500,7 @@ async function guardarNuevoPL() {
             },
             body: JSON.stringify({
                 ot_id: otId,
-                nombre,
-                fecha_inicio_real: startDate || null,
-                fecha_termino_real: endDate || null
+                nombre
             })
         });
         const data = await readJsonResponse(res);
@@ -521,71 +513,11 @@ async function guardarNuevoPL() {
         currentPlName = String(data.pl.nombre || nombre);
         currentPlVersion = Number(data.pl.version || 1);
         currentPlEtag = null;
-        currentPlStartDate = String(data.pl.fecha_inicio_real || '');
-        currentPlEndDate = String(data.pl.fecha_termino_real || '');
         setPendingImport(false);
         await cargarTabs();
         mostrarAlerta(`Pestaña "${nombre}" creada.`, "exito");
     } catch (error) {
         mostrarAlerta(error.message || "No se pudo crear la packing list.", "error");
-    }
-}
-
-function actualizarPeriodoLoteUI() {
-    const startInput = document.getElementById('packing-period-start');
-    const endInput = document.getElementById('packing-period-end');
-    if (startInput) startInput.value = currentPlStartDate;
-    if (endInput) {
-        endInput.value = currentPlEndDate;
-        endInput.min = currentPlStartDate;
-    }
-}
-
-async function guardarPeriodoPL() {
-    if (!canEdit || !currentPlId) return;
-    const startInput = document.getElementById('packing-period-start');
-    const endInput = document.getElementById('packing-period-end');
-    const saveButton = document.getElementById('packing-period-save');
-    const startDate = startInput?.value || '';
-    const endDate = endInput?.value || '';
-    if (startDate && endDate && endDate < startDate) {
-        mostrarAlerta('La fecha de término no puede ser anterior al inicio.', 'error');
-        endInput?.focus();
-        return;
-    }
-
-    if (saveButton) saveButton.disabled = true;
-    try {
-        const response = await fetch(`/api/produccion/packing_lists/${currentPlId}/periodo`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({
-                expected_version: Number(currentPlVersion),
-                fecha_inicio_real: startDate || null,
-                fecha_termino_real: endDate || null
-            })
-        });
-        const data = await readJsonResponse(response);
-        if (!response.ok || !data.success) {
-            if (Number.isFinite(Number(data.current_version))) {
-                currentPlVersion = Number(data.current_version);
-                currentPlEtag = null;
-            }
-            throw new Error(responseError(data, 'No se pudo guardar el período real.'));
-        }
-        updatePackingListVersion(response, data);
-        currentPlStartDate = String(data.pl?.fecha_inicio_real || '');
-        currentPlEndDate = String(data.pl?.fecha_termino_real || '');
-        actualizarPeriodoLoteUI();
-        mostrarAlerta('Período real actualizado.', 'exito');
-    } catch (error) {
-        actualizarPeriodoLoteUI();
-        mostrarAlerta(error.message || 'No se pudo guardar el período real.', 'error');
-    } finally {
-        if (saveButton) saveButton.disabled = false;
     }
 }
 
@@ -727,32 +659,49 @@ function stringifyOperarios(op) {
 }
 
 
-async function cargarPersonalProduccion() {
-    try {
-        const response = await fetch('/api/produccion/personal', {
-            headers: { 'Accept': 'application/json' }
-        });
-        const data = await readJsonResponse(response);
-        if (!response.ok || !data.success || !Array.isArray(data.personal)) {
-            throw new Error(responseError(data, 'No se pudo cargar el padrón de personal.'));
+async function cargarPersonalProduccion({ force = false } = {}) {
+    if (personnelCatalogLoaded && !force) return personnelCatalog;
+    if (personnelCatalogRequest) return personnelCatalogRequest;
+
+    personnelCatalogRequest = (async () => {
+        try {
+            const response = await fetch('/api/produccion/personal', {
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await readJsonResponse(response);
+            if (!response.ok || !data.success || !Array.isArray(data.personal)) {
+                throw new Error(responseError(data, 'No se pudo cargar el personal registrado.'));
+            }
+            personnelCatalog = data.personal;
+            personnelCatalogLoaded = true;
+            renderizarDirectorioPersonal();
+            if (personnelSelectorProcess) renderizarOpcionesPersonal();
+            return personnelCatalog;
+        } catch (error) {
+            console.error('Error al cargar personal:', error);
+            personnelCatalog = [];
+            personnelCatalogLoaded = false;
+            renderizarDirectorioPersonal();
+            throw error;
+        } finally {
+            personnelCatalogRequest = null;
         }
-        personnelCatalog = data.personal;
-        renderizarPadronPersonal();
-        if (personnelSelectorProcess) renderizarOpcionesPersonal();
-    } catch (error) {
-        console.error('Error al cargar personal:', error);
-        personnelCatalog = [];
-        renderizarPadronPersonal();
-    }
+    })();
+
+    return personnelCatalogRequest;
 }
 
-function renderizarPadronPersonal() {
+function renderizarDirectorioPersonal() {
     const container = document.getElementById('personal-master-list');
     const count = document.getElementById('personal-master-count');
     if (count) count.textContent = `${personnelCatalog.length} ${personnelCatalog.length === 1 ? 'persona' : 'personas'}`;
     if (!container) return;
+    if (!personnelCatalogLoaded) {
+        container.innerHTML = '<div class="production-personnel-directory-empty"><strong>Cargando personal…</strong><span>La lista aparecerá en un momento.</span></div>';
+        return;
+    }
     if (!personnelCatalog.length) {
-        container.innerHTML = '<div class="production-personnel-directory-empty"><strong>El padrón está vacío</strong><span>Agrega al equipo antes de asignarlo a los procesos.</span></div>';
+        container.innerHTML = '<div class="production-personnel-directory-empty"><strong>Aún no hay personal registrado</strong><span>Agrega al equipo antes de asignarlo a los procesos.</span></div>';
         return;
     }
     container.innerHTML = personnelCatalog.map(person => `
@@ -763,12 +712,12 @@ function renderizarPadronPersonal() {
     `).join('');
 }
 
-function abrirPadronPersonal() {
+async function abrirDirectorioPersonal() {
     if (!canEdit) return;
     const overlay = document.getElementById('personal-master-overlay');
     const dialog = document.getElementById('personal-master-dialog');
     if (!overlay || !dialog) return;
-    cargarPersonalProduccion();
+    renderizarDirectorioPersonal();
     overlay.classList.remove('hidden');
     overlay.setAttribute('aria-hidden', 'false');
     requestAnimationFrame(() => {
@@ -776,9 +725,14 @@ function abrirPadronPersonal() {
         dialog.classList.remove('scale-95');
         document.getElementById('personal-master-name')?.focus({ preventScroll: true });
     });
+    try {
+        await cargarPersonalProduccion();
+    } catch (error) {
+        mostrarAlerta(error.message || 'No se pudo cargar el personal.', 'error');
+    }
 }
 
-function cerrarPadronPersonal() {
+function cerrarDirectorioPersonal() {
     const overlay = document.getElementById('personal-master-overlay');
     const dialog = document.getElementById('personal-master-dialog');
     if (!overlay || !dialog) return;
@@ -817,8 +771,16 @@ async function registrarPersonal(event) {
             throw new Error(responseError(data, 'No se pudo registrar a la persona.'));
         }
         if (input) input.value = '';
-        await cargarPersonalProduccion();
-        mostrarAlerta(data.created ? 'Persona agregada al padrón.' : 'Esa persona ya estaba registrada.', data.created ? 'exito' : 'info');
+        const person = data.person;
+        if (person?.id) {
+            const existingIndex = personnelCatalog.findIndex(item => Number(item.id) === Number(person.id));
+            if (existingIndex === -1) personnelCatalog.push(person);
+            else personnelCatalog[existingIndex] = person;
+            personnelCatalog.sort((left, right) => String(left.nombre).localeCompare(String(right.nombre), 'es', { sensitivity: 'base' }));
+            personnelCatalogLoaded = true;
+            renderizarDirectorioPersonal();
+        }
+        mostrarAlerta(data.created ? 'Persona registrada.' : 'Esa persona ya estaba registrada.', data.created ? 'exito' : 'info');
         input?.focus();
     } catch (error) {
         mostrarAlerta(error.message || 'No se pudo registrar a la persona.', 'error');
@@ -828,7 +790,6 @@ async function registrarPersonal(event) {
 async function abrirSelectorPersonal(processKey) {
     if (!canEdit || !currentDetalleRow) return;
     personnelSelectorProcess = processKey;
-    if (!personnelCatalog.length) await cargarPersonalProduccion();
     const processNames = {hab:'Habilitado',arm:'Armado',sol:'Soldado',lim:'Limpieza',lib:'Liberación',gal:'Galvanizado',are:'Arenado',pin:'Pintado'};
     const overlay = document.getElementById('personnel-selector-overlay');
     const dialog = document.getElementById('personnel-selector-dialog');
@@ -845,6 +806,13 @@ async function abrirSelectorPersonal(processKey) {
         dialog.classList.remove('scale-95');
         search?.focus({ preventScroll: true });
     });
+    if (!personnelCatalogLoaded) {
+        try {
+            await cargarPersonalProduccion();
+        } catch (error) {
+            mostrarAlerta(error.message || 'No se pudo cargar el personal.', 'error');
+        }
+    }
 }
 
 function cerrarSelectorPersonal() {
@@ -862,6 +830,12 @@ function renderizarOpcionesPersonal() {
     const empty = document.getElementById('personnel-selector-empty');
     if (!container || !empty || !currentDetalleRow || !personnelSelectorProcess) return;
     const hidden = currentDetalleRow.querySelector('.input-operario');
+    if (!personnelCatalogLoaded) {
+        empty.hidden = true;
+        container.hidden = false;
+        container.innerHTML = '<div class="production-personnel-directory-empty"><strong>Cargando personal…</strong></div>';
+        return;
+    }
     const assignments = parseOperarios(hidden?.value || '');
     const selectedKeys = new Set(
         normalizeOperatorNames(assignments[personnelSelectorProcess] || '')
@@ -887,10 +861,10 @@ function filtrarSelectorPersonal() {
     });
 }
 
-function abrirPadronDesdeSelector() {
+function abrirDirectorioDesdeSelector() {
     reopenSelectorAfterPersonnel = true;
     cerrarSelectorPersonal();
-    window.setTimeout(abrirPadronPersonal, 190);
+    window.setTimeout(abrirDirectorioPersonal, 190);
 }
 
 async function guardarSeleccionPersonal() {
@@ -955,7 +929,7 @@ function iniciarAutoSync() {
     autoSyncInterval = setInterval(() => {
         if (document.hidden) return;
 
-        if (currentPlId && !hasPendingImport && !hayGuardadosCeldaPendientes()) {
+        if (currentPlId && !isProductionDialogOpen() && !hasPendingImport && !hayGuardadosCeldaPendientes()) {
             sincronizarComponentesBD();
         }
 
@@ -999,6 +973,7 @@ async function sincronizarComponentesBD() {
             mapComp[String(component.id)] = component;
         });
 
+        let matrixChanged = false;
         filas.forEach(tr => {
             const bdComp = mapComp[String(tr.dataset.id)];
             if (!bdComp) return;
@@ -1039,7 +1014,8 @@ async function sincronizarComponentesBD() {
                         && Number(input.value) !== remoteValue
                     ) {
                         input.value = remoteValue;
-                        validarYCalcular(input, cant, proc, true);
+                        validarYCalcular(input, cant, proc, true, true);
+                        matrixChanged = true;
                     }
                 });
             }
@@ -1052,7 +1028,8 @@ async function sincronizarComponentesBD() {
                 && Number(inputDespacho.value) !== remoteDispatch
             ) {
                 inputDespacho.value = remoteDispatch;
-                validarYCalcular(inputDespacho, cant, 'des', true);
+                validarYCalcular(inputDespacho, cant, 'des', true, true);
+                matrixChanged = true;
             }
 
             const alertButton = tr.querySelector('button[title="Reportar incidencia"]');
@@ -1067,6 +1044,7 @@ async function sincronizarComponentesBD() {
                 }
             }
         });
+        if (matrixChanged) recalcularMatriz();
         loadedComponentsFingerprint = stableComponentsFingerprint(componentes);
     } catch (error) {
         console.error("Error sincronizando elementos:", error);
@@ -1203,7 +1181,8 @@ async function guardarPackingListBD() {
                 : 'No requerido',
             operario: inputOperario
                 ? inputOperario.value.trim()
-                : ''
+                : '',
+            fecha_realizacion: fila.dataset.fechaRealizacion || null
         });
     });
 
@@ -1227,8 +1206,6 @@ async function guardarPackingListBD() {
             body: JSON.stringify({
                 pl_id: currentPlId,
                 expected_version: Number(currentPlVersion),
-                fecha_inicio_real: currentPlStartDate || null,
-                fecha_termino_real: currentPlEndDate || null,
                 componentes
             })
         });
@@ -1257,9 +1234,6 @@ async function guardarPackingListBD() {
         }
 
         updatePackingListVersion(res, data);
-        currentPlStartDate = String(data.pl?.fecha_inicio_real || currentPlStartDate || '');
-        currentPlEndDate = String(data.pl?.fecha_termino_real || currentPlEndDate || '');
-        actualizarPeriodoLoteUI();
         loadedComponentsFingerprint = currentFingerprint;
         setPendingImport(false);
         mostrarAlerta(
@@ -1292,6 +1266,8 @@ function renderizarTabla(componentes, isFromDB) {
         return;
     }
 
+    const tableFragment = document.createDocumentFragment();
+
     const ordenGrupos = ['MATERIALES DE FABRICACIÓN', 'PERNERÍA TEMPLATE', 'PERNERÍA TORRE', 'CABLE DE VIDA', 'SISTEMA DE VIENTOS', 'OTROS SUMINISTROS'];
     const grupos = {}; ordenGrupos.forEach(g => grupos[g] = []);
 
@@ -1316,7 +1292,7 @@ function renderizarTabla(componentes, isFromDB) {
                 <span class="text-slate-500 font-bold ml-1 text-[10px] bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">${items.length} regs</span>
             </div>
         </td>`;
-        tbody.appendChild(trHeader);
+        tableFragment.appendChild(trHeader);
 
         items.forEach(comp => {
             const marca = comp.marca || 'S/M';
@@ -1327,6 +1303,7 @@ function renderizarTabla(componentes, isFromDB) {
             const tipo = comp.tipo || 'fab';
             const isSuministro = tipo !== 'fab' && tipo !== 'fabricacion';
             const operario = comp.operario || '';
+            const fechaRealizacion = comp.fecha_realizacion || '';
             const estadoSuministro = comp.estado_suministro || 'No requerido';
 
             const safeMarca = escapeHtml(marca);
@@ -1343,6 +1320,7 @@ function renderizarTabla(componentes, isFromDB) {
             const tr = document.createElement('tr');
             tr.className = `hover:bg-slate-50 bg-white transition-colors group border-b border-slate-100 ${alertClass}`;
             tr.dataset.cant = cant; tr.dataset.tipo = tipo;
+            tr.dataset.fechaRealizacion = fechaRealizacion;
             if (dbId) tr.dataset.id = dbId;
 
             let html = `<td class="px-1 py-1.5 border-r border-slate-100 sticky-c-alert bg-white text-center align-middle group-hover:bg-slate-50 transition-colors">${alertControl}</td>
@@ -1402,15 +1380,17 @@ function renderizarTabla(componentes, isFromDB) {
                     abrirDetalle(detailButton, marca, long, cant, desc, tipo);
                 });
             }
-            tbody.appendChild(tr); piezas++;
+            tableFragment.appendChild(tr); piezas++;
 
             if(!isSuministro) {
-                procesosProd.forEach(proc => { if(proc !== 'des') { const inp = tr.querySelector(`.proc-${proc}`); if (inp && inp.value !== 0 && inp.value !== "0") validarYCalcular(inp, cant, proc, true); }});
+                procesosProd.forEach(proc => { if(proc !== 'des') { const inp = tr.querySelector(`.proc-${proc}`); if (inp && inp.value !== 0 && inp.value !== "0") validarYCalcular(inp, cant, proc, true, true); }});
             }
             const inpDes = tr.querySelector('.proc-des');
-            if(inpDes && inpDes.value > 0) validarYCalcular(inpDes, cant, 'des', true);
+            if(inpDes && inpDes.value > 0) validarYCalcular(inpDes, cant, 'des', true, true);
         });
     });
+
+    tbody.appendChild(tableFragment);
 
     const lbl = document.getElementById('contador-piezas');
     if(lbl) lbl.innerText = `${piezas} Regs`;
@@ -1445,50 +1425,6 @@ function fechaExcelIso(value) {
     const localMatch = text.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b/);
     if (localMatch) return `${localMatch[3]}-${localMatch[2].padStart(2, '0')}-${localMatch[1].padStart(2, '0')}`;
     return '';
-}
-
-function detectarPeriodoRealExcel(rows, headerRowIndex, headers) {
-    const period = { start: '', end: '' };
-    const isStartLabel = label => /FECHA\s*(DE\s*)?(INICIO|INICIAL)|F\.\s*INICIO/.test(label);
-    const isEndLabel = label => /FECHA\s*(DE\s*)?(TERMINO|FIN|FINAL)|F\.\s*(TERMINO|FIN)/.test(label);
-    const metadataLimit = headerRowIndex > 0 ? headerRowIndex : Math.min(rows.length, 20);
-
-    for (let rowIndex = 0; rowIndex < metadataLimit; rowIndex++) {
-        const row = Array.isArray(rows[rowIndex]) ? rows[rowIndex] : [];
-        row.forEach((cell, columnIndex) => {
-            const label = normalizarEtiquetaExcel(cell);
-            const target = isStartLabel(label) ? 'start' : (isEndLabel(label) ? 'end' : null);
-            if (!target || period[target]) return;
-            const candidates = [
-                cell,
-                row[columnIndex + 1],
-                row[columnIndex + 2],
-                rows[rowIndex + 1]?.[columnIndex]
-            ];
-            period[target] = candidates.map(fechaExcelIso).find(Boolean) || '';
-        });
-    }
-
-    const startColumn = headers.findIndex(isStartLabel);
-    const endColumn = headers.findIndex(isEndLabel);
-    if ((!period.start && startColumn !== -1) || (!period.end && endColumn !== -1)) {
-        const starts = [];
-        const ends = [];
-        rows.slice(headerRowIndex + 1).forEach(row => {
-            if (!Array.isArray(row)) return;
-            if (startColumn !== -1) {
-                const value = fechaExcelIso(row[startColumn]);
-                if (value) starts.push(value);
-            }
-            if (endColumn !== -1) {
-                const value = fechaExcelIso(row[endColumn]);
-                if (value) ends.push(value);
-            }
-        });
-        if (!period.start && starts.length) period.start = starts.sort()[0];
-        if (!period.end && ends.length) period.end = ends.sort().at(-1);
-    }
-    return period;
 }
 
 function importarPackingList(event) {
@@ -1548,7 +1484,10 @@ function importarPackingList(event) {
             ));
             const idxDesc = headers.findIndex(header => header.includes('DESCRIP'));
             const idxLong = headers.findIndex(header => header.includes('LONGITUD'));
-            const detectedPeriod = detectarPeriodoRealExcel(json, headerRowIdx, headers);
+            const idxFecha = headers.findIndex(header => (
+                header === 'FECHA'
+                || /FECHA.*(FABRIC|REALIZ|TERMIN|FINAL)/.test(header)
+            ));
 
             if (idxMarca === -1 || idxCant === -1) {
                 mostrarAlerta(
@@ -1623,6 +1562,9 @@ function importarPackingList(event) {
                     tipo: currentTipo,
                     estado_suministro: 'No requerido',
                     operario: '',
+                    fecha_realizacion: idxFecha !== -1
+                        ? (fechaExcelIso(row[idxFecha]) || null)
+                        : null,
                     hab: -1,
                     arm: -1,
                     sol: -1,
@@ -1644,14 +1586,10 @@ function importarPackingList(event) {
             }
 
             renderizarTabla(componentes, false);
-            if (detectedPeriod.start || detectedPeriod.end) {
-                currentPlStartDate = detectedPeriod.start || currentPlStartDate;
-                currentPlEndDate = detectedPeriod.end || currentPlEndDate;
-                actualizarPeriodoLoteUI();
-            }
             setPendingImport(true);
+            const datedElements = componentes.filter(component => component.fecha_realizacion).length;
             mostrarAlerta(
-                `Excel cargado: ${componentes.length} elementos${detectedPeriod.start || detectedPeriod.end ? ' y período real detectado' : ''} pendientes de guardar.`,
+                `Excel cargado: ${componentes.length} elementos${datedElements ? `, ${datedElements} con fecha` : ''} pendientes de guardar.`,
                 "info"
             );
         } catch (error) {
@@ -1698,7 +1636,7 @@ function actualizarEstadoSuministro(selectElement) {
     recalcularMatriz();
 }
 
-function validarYCalcular(input, maxCant, procKey, skipSave = false) {
+function validarYCalcular(input, maxCant, procKey, skipSave = false, skipRecalculate = false) {
     if (!canEdit && !skipSave) return;
 
     const row = input.closest('tr');
@@ -1708,7 +1646,7 @@ function validarYCalcular(input, maxCant, procKey, skipSave = false) {
     if (valueText === '') {
         const percentageCell = row.querySelector(`.pct-${procKey}`);
         if (percentageCell) percentageCell.innerText = '-';
-        recalcularMatriz();
+        if (!skipRecalculate) recalcularMatriz();
         return;
     }
 
@@ -1723,14 +1661,14 @@ function validarYCalcular(input, maxCant, procKey, skipSave = false) {
 
         if (dateCell) {
             if (value > 0) {
-                const dispatchDate = currentPlEndDate
-                    ? new Date(`${currentPlEndDate}T00:00:00`)
-                    : new Date();
-                const date = dispatchDate.toLocaleDateString('es-PE', {
-                    day: '2-digit',
-                    month: 'short'
-                }).toUpperCase();
-                dateCell.innerHTML = `<span class="font-black text-slate-800">${date}</span>`;
+                const completionDate = row.dataset.fechaRealizacion || '';
+                const date = completionDate
+                    ? new Date(`${completionDate}T00:00:00`).toLocaleDateString('es-PE', {
+                        day: '2-digit',
+                        month: 'short'
+                    }).toUpperCase()
+                    : 'SIN FECHA';
+                dateCell.innerHTML = `<span class="font-black ${completionDate ? 'text-slate-800' : 'text-slate-400'}">${date}</span>`;
                 dateCell.className = 'px-1 py-1.5 text-center bg-slate-200 border-l border-slate-300 sticky-r2 pct-des';
             } else {
                 dateCell.innerHTML = '-';
@@ -1782,7 +1720,7 @@ function validarYCalcular(input, maxCant, procKey, skipSave = false) {
             value
         );
     }
-    recalcularMatriz();
+    if (!skipRecalculate) recalcularMatriz();
 }
 
 async function toggleAlertaFila(button) {
@@ -1899,6 +1837,12 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
     document.getElementById('det-desc').innerText = desc;
     document.getElementById('det-long').innerText = long + ' mm';
     document.getElementById('det-cant').innerText = cant;
+    const completionDateInput = document.getElementById('det-fecha-realizacion');
+    if (completionDateInput) {
+        const completionDate = currentDetalleRow.dataset.fechaRealizacion || '';
+        completionDateInput.value = completionDate;
+        completionDateInput.dataset.previous = completionDate;
+    }
 
     // Obtenemos los operarios
     const hiddenOperario = currentDetalleRow.querySelector('.input-operario');
@@ -1923,6 +1867,8 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
     const cardsContainer = document.getElementById('det-cards-procesos');
     if(tablaContainer) tablaContainer.innerHTML = '';
     if(cardsContainer) cardsContainer.innerHTML = '';
+    const processRows = [];
+    const assignmentCards = [];
 
     const nombresProcObj = {hab: 'Habilitado', arm: 'Armado', sol: 'Soldado', lim: 'Limpieza', lib: 'Liberación', gal: 'Galvanizado', are: 'Arenado', pin: 'Pintado'};
 
@@ -1934,16 +1880,16 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
             ? 'is-complete'
             : (estActual !== 'No requerido' ? 'is-progress' : '');
 
-        if(tablaContainer) tablaContainer.innerHTML = `<tr>
+        processRows.push(`<tr>
             <td>Abastecimiento</td>
             <td><span class="production-detail-process-status ${supplyStatusClass}"><i></i>${escapeHtml(estActual)}</span></td>
             <td>-</td><td>-</td><td>${porcTotal.toFixed(1)}%</td>
-        </tr>`;
+        </tr>`);
 
-        if(cardsContainer) cardsContainer.innerHTML = `<div class="production-detail-supply">
+        assignmentCards.push(`<div class="production-detail-supply">
             <strong>Estado de abastecimiento</strong>
             <span>${escapeHtml(estActual)}</span>
-        </div>`;
+        </div>`);
     } else {
         procesosProd.forEach(p => {
             if (p === 'des' || !activeProcs[p]) return;
@@ -1970,10 +1916,10 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
                         <div class="production-detail-operator">
                             <span>Personal asignado</span>
                             <button type="button" onclick="abrirSelectorPersonal('${p}')" class="production-detail-personnel-trigger">
-                                <strong>${operatorName ? escapeHtml(operatorName) : 'Seleccionar del padrón'}</strong>
+                                <strong>${operatorName ? escapeHtml(operatorName) : 'Seleccionar personal'}</strong>
                                 <span class="material-symbols-rounded" aria-hidden="true">expand_more</span>
                             </button>
-                            <small>${operatorName ? 'Usa el padrón para cambiar la asignación.' : 'Sin nombres escritos manualmente.'}</small>
+                            <small>${operatorName ? 'Selecciona nuevamente para cambiar la asignación.' : 'Elige una persona registrada.'}</small>
                         </div>
                         ` : `
                         <div class="production-detail-readonly"><span>Asignación</span><strong>Proceso omitido</strong></div>
@@ -1982,15 +1928,15 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
                         <strong>${isNA ? 'No aplica' : (operatorName ? escapeHtml(operatorName) : 'Sin operarios asignados')}</strong>
                     </div>`;
 
-                if(tablaContainer) tablaContainer.innerHTML += `<tr>
+                processRows.push(`<tr>
                     <td>${nombresProcObj[p]}</td>
                     <td><span class="production-detail-process-status ${statusClass}"><i></i>${txtEstado}</span></td>
                     <td>${isNA ? '-' : cant}</td>
                     <td>${isNA ? '-' : val}</td>
                     <td>${porcentajeLocal}</td>
-                </tr>`;
+                </tr>`);
 
-                if(cardsContainer) cardsContainer.innerHTML += `<article class="production-detail-assignment ${isNA ? 'is-disabled' : ''}">
+                assignmentCards.push(`<article class="production-detail-assignment ${isNA ? 'is-disabled' : ''}">
                     <div class="production-detail-assignment-heading">
                         <strong>${nombresProcObj[p]}</strong>
                         <span>${txtEstado} · ${porcentajeLocal}</span>
@@ -1998,10 +1944,13 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
                     <div class="production-detail-assignment-controls">
                         ${processControls}
                     </div>
-                </article>`;
+                </article>`);
             }
         });
     }
+
+    if (tablaContainer) tablaContainer.innerHTML = processRows.join('');
+    if (cardsContainer) cardsContainer.innerHTML = assignmentCards.join('');
 
     const overlay = document.getElementById('detalle-overlay'); const box = document.getElementById('detalle-modal-box');
     if(overlay && box) {
@@ -2031,6 +1980,44 @@ function cerrarDetalle() {
             lastDetalleTrigger = null;
         }, 190);
     }
+}
+
+async function guardarFechaElemento(input) {
+    if (!canEdit || !input || !currentDetalleRow?.dataset.id) return;
+    const elementRow = currentDetalleRow;
+    const previousValue = input.dataset.previous || '';
+    const nextValue = input.value || null;
+    input.disabled = true;
+
+    const saved = await encolarGuardadoComponente(
+        elementRow.dataset.id,
+        'fecha_realizacion',
+        nextValue,
+    );
+
+    if (saved) {
+        const storedValue = nextValue || '';
+        elementRow.dataset.fechaRealizacion = storedValue;
+        input.dataset.previous = storedValue;
+        const dispatchInput = elementRow.querySelector('.proc-des');
+        if (dispatchInput && Number(dispatchInput.value) > 0) {
+            validarYCalcular(
+                dispatchInput,
+                Number.parseFloat(elementRow.dataset.cant) || 0,
+                'des',
+                true,
+                true,
+            );
+        }
+        mostrarAlerta(
+            storedValue ? 'Fecha del elemento guardada.' : 'Fecha del elemento eliminada.',
+            'exito',
+        );
+    } else {
+        input.value = previousValue;
+    }
+
+    input.disabled = !canEdit;
 }
 
 

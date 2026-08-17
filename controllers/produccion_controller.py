@@ -36,6 +36,7 @@ EDITABLE_COMPONENT_FIELDS = {
     'tipo',
     'estado_suministro',
     'operario',
+    'fecha_realizacion',
     'hab_real',
     'arm_real',
     'sol_real',
@@ -68,6 +69,7 @@ AUDIT_FIELD_LABELS = {
     'tipo': 'tipo',
     'estado_suministro': 'estado de suministro',
     'operario': 'personal asignado',
+    'fecha_realizacion': 'fecha de fabricación',
     'hab_real': 'avance habilitado',
     'arm_real': 'avance armado',
     'sol_real': 'avance soldado',
@@ -334,6 +336,8 @@ def _validate_component_value(component, field_name, value):
         return _coerce_text(value, field_name, 50)
     if field_name == 'operario':
         return _canonicalize_personnel_assignments(value)
+    if field_name == 'fecha_realizacion':
+        return _coerce_optional_date(value, field_name)
     if field_name == 'cantidad':
         quantity = _coerce_int(value, field_name)
         current_progress = [
@@ -439,6 +443,10 @@ def _validate_import_component(component):
         'estado_suministro': supply_state,
         'operario': _canonicalize_personnel_assignments(
             component.get('operario', '')
+        ),
+        'fecha_realizacion': _coerce_optional_date(
+            component.get('fecha_realizacion'),
+            'fecha_realizacion',
         ),
         'hab_real': progress_value('hab', 'hab_real'),
         'arm_real': progress_value('arm', 'arm_real'),
@@ -766,7 +774,7 @@ def actualizar_periodo_pl(pl_id):
                 f'Usuario {current_user.id}',
             ),
             mensaje=(
-                f'Actualizó el período real de {packing_list.nombre}: '
+                f'Actualizó las fechas históricas de {packing_list.nombre}: '
                 f'{real_start.strftime("%d/%m/%Y") if real_start else "sin inicio"} '
                 f'a {real_end.strftime("%d/%m/%Y") if real_end else "sin término"}.'
             ),
@@ -790,7 +798,7 @@ def actualizar_periodo_pl(pl_id):
         )
         return jsonify({
             'success': False,
-            'error': 'No fue posible actualizar el período real del lote.',
+            'error': 'No fue posible actualizar las fechas históricas del lote.',
         }), 500
 
 

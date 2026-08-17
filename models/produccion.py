@@ -178,6 +178,7 @@ class ComponenteOT(db.Model):
         default='Pendiente',
     )
     operario = db.Column(db.String(500), nullable=False, default='')
+    fecha_realizacion = db.Column(db.Date, nullable=True)
 
     # Una pieza nueva no debe asumir operaciones que quizá no necesita. Cada
     # proceso se habilita explícitamente desde su ficha; -1 significa N/A.
@@ -203,6 +204,11 @@ class ComponenteOT(db.Model):
             'tipo': self.tipo,
             'estado_suministro': self.estado_suministro,
             'operario': self.operario,
+            'fecha_realizacion': (
+                self.fecha_realizacion.isoformat()
+                if self.fecha_realizacion
+                else None
+            ),
             'hab_real': self.hab_real,
             'arm_real': self.arm_real,
             'sol_real': self.sol_real,
@@ -217,7 +223,7 @@ class ComponenteOT(db.Model):
 
 
 class PersonalProduccion(db.Model):
-    """Padrón canónico de personal disponible para asignaciones de planta."""
+    """Directorio único de personal disponible para asignaciones de planta."""
 
     __tablename__ = 'personal_produccion'
     __table_args__ = (
