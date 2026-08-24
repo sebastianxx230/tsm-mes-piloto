@@ -13,6 +13,7 @@ let currentOtVersion = Number(window.ProduccionConfig.otVersion || 1);
 
 let currentPlId = null;
 let currentPlName = "";
+let currentPlSite = "";
 let currentPlVersion = null;
 let currentPlEtag = null;
 let autoSyncInterval = null;
@@ -33,6 +34,9 @@ let cellSaveInFlight = false;
 let lastMessageSyncAt = 0;
 let loadedComponentsFingerprint = null;
 let pendingSaveConfirmation = null;
+let pendingImportMeta = null;
+let productionRoutes = [];
+let allowConfirmedNavigation = false;
 
 const cellSaveTimers = new Map();
 let cellSaveQueue = Promise.resolve();
@@ -120,6 +124,16 @@ function setPendingImport(isPending) {
     if (status) status.classList.toggle('hidden', !isPending);
 }
 
+function optionalProgressNumber(value) {
+    if (value === null || value === undefined || value === '' || Number(value) === -1) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function hasUnsavedProductionChanges() {
+    return hasPendingImport || importSaveInFlight || hayGuardadosCeldaPendientes();
+}
+
 function normalizeOperatorNames(value) {
     return String(value ?? '')
         .split(/[,;\n]+/)
@@ -135,28 +149,47 @@ function stableComponentsFingerprint(components) {
         cantidad: Number(component.cantidad || 0),
         descripcion: String(component.descripcion ?? '').trim(),
         longitud: String(component.longitud ?? '').trim(),
-        hab: Number(component.hab ?? component.hab_real ?? -1),
-        arm: Number(component.arm ?? component.arm_real ?? -1),
-        sol: Number(component.sol ?? component.sol_real ?? -1),
-        lim: Number(component.lim ?? component.lim_real ?? -1),
-        lib: Number(component.lib ?? component.lib_real ?? -1),
-        gal: Number(component.gal ?? component.gal_real ?? -1),
-        are: Number(component.are ?? component.are_real ?? -1),
-        pin: Number(component.pin ?? component.pin_real ?? -1),
+        categoria: String(component.categoria || 'FABRICACION'),
+        subcategoria: String(component.subcategoria || ''),
+        unidad: String(component.unidad || 'UND'),
+        ubicacion: String(component.ubicacion || ''),
+        perfil: String(component.perfil || ''),
+        material: String(component.material || ''),
+        longitud_mm: Number(component.longitud_mm || 0),
+        area_unitaria_m2: Number(component.area_unitaria_m2 || 0),
+        area_total_m2: Number(component.area_total_m2 || 0),
+        peso_unitario_kg: Number(component.peso_unitario_kg || 0),
+        peso_total_kg: Number(component.peso_total_kg || 0),
+        fila_origen: Number(component.fila_origen || 0),
+        ruta_codigo: String(component.ruta_codigo || ''),
+        hab: optionalProgressNumber(component.hab ?? component.hab_real),
+        arm: optionalProgressNumber(component.arm ?? component.arm_real),
+        sol: optionalProgressNumber(component.sol ?? component.sol_real),
+        lim: optionalProgressNumber(component.lim ?? component.lim_real),
+        lib: optionalProgressNumber(component.lib ?? component.lib_real),
+        gal: optionalProgressNumber(component.gal ?? component.gal_real),
+        are: optionalProgressNumber(component.are ?? component.are_real),
+        pin: optionalProgressNumber(component.pin ?? component.pin_real),
         des: Number(component.des ?? component.des_real ?? 0),
         alerta: Boolean(component.alerta),
-        tipo: String(component.tipo || 'fab'),
         estado_suministro: String(component.estado_suministro || 'No requerido'),
         operario: String(component.operario || '').trim(),
-        fecha_realizacion: String(component.fecha_realizacion || '')
+        fecha_inicio_real: String(component.fecha_inicio_real || ''),
+        fecha_termino_real: String(component.fecha_termino_real || component.fecha_realizacion || '')
     })));
 }
 
-function solicitarConfirmacionGuardado(nombre, cantidad) {
+function solicitarConfirmacionProduccion(options) {
     const overlay = document.getElementById('save-confirm-overlay');
-    if (!overlay) return Promise.resolve(window.confirm(`¿Guardar ${cantidad} elementos en "${nombre}"?`));
-    document.getElementById('save-confirm-description').textContent = `Se reemplazará la información almacenada de “${nombre}”.`;
-    document.getElementById('save-confirm-count').textContent = String(cantidad);
+    if (!overlay) return Promise.resolve(window.confirm(options.fallback));
+    document.getElementById('save-confirm-icon').textContent = options.icon;
+    document.getElementById('save-confirm-kicker').textContent = options.kicker;
+    document.getElementById('save-confirm-title').textContent = options.title;
+    document.getElementById('save-confirm-description').textContent = options.description;
+    document.getElementById('save-confirm-summary-label').textContent = options.summaryLabel;
+    document.getElementById('save-confirm-count').textContent = String(options.summaryValue);
+    document.getElementById('save-confirm-note').textContent = options.note;
+    document.getElementById('save-confirm-accept-label').textContent = options.acceptLabel;
     overlay.classList.remove('hidden');
     overlay.setAttribute('aria-hidden', 'false');
     requestAnimationFrame(() => {
@@ -238,7 +271,9 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
         aplicarConfiguracionProcesosUI();
         actualizarColorFecha();
+        configurarSelectorRutaImportacion();
         cargarTabs();
+        cargarRutasProduccion();
         iniciarAutoSync();
         configurarDetalleElemento();
         configurarNavegacionSegura();
@@ -342,6 +377,34 @@ function configurarDetalleElemento() {
     });
 }
 
+function solicitarConfirmacionGuardado(nombre, cantidad) {
+    return solicitarConfirmacionProduccion({
+        icon: 'save',
+        kicker: 'Confirmar guardado',
+        title: 'Reemplazar información del lote',
+        description: `Se reemplazará la información almacenada de “${nombre}”.`,
+        summaryLabel: 'Elementos de la lista',
+        summaryValue: cantidad,
+        note: 'Si otra persona modificó esta lista, el sistema bloqueará el reemplazo.',
+        acceptLabel: 'Guardar cambios',
+        fallback: `¿Guardar ${cantidad} elementos en "${nombre}"?`
+    });
+}
+
+function solicitarConfirmacionDiferenciaOt(expectedCode, detectedCode) {
+    return solicitarConfirmacionProduccion({
+        icon: 'warning',
+        kicker: 'Revisar referencia',
+        title: 'El encabezado conserva otra OT',
+        description: `El nombre del archivo corresponde a ${expectedCode}, pero el encabezado interno indica ${detectedCode}.`,
+        summaryLabel: 'OT de destino',
+        summaryValue: expectedCode,
+        note: 'Continúa solo si verificaste que los elementos pertenecen a la OT abierta.',
+        acceptLabel: 'Importar de todas formas',
+        fallback: `El encabezado indica ${detectedCode}, pero el archivo y la pantalla corresponden a ${expectedCode}. ¿Deseas continuar?`
+    });
+}
+
 function ajustarAlturaMatriz() {
     const wrapper = document.querySelector('.matrix-wrapper');
     const tableModule = document.getElementById('table-module');
@@ -406,6 +469,7 @@ async function cargarTabs() {
             container.innerHTML = '';
             currentPlId = null;
             currentPlName = "";
+            currentPlSite = "";
             currentPlVersion = null;
             currentPlEtag = null;
             setPendingImport(false);
@@ -433,23 +497,23 @@ async function cargarTabs() {
                 const previousId = currentPlId;
                 currentPlId = plId;
                 currentPlName = String(pl.nombre || '');
+                currentPlSite = String(pl.site || '');
+                const siteInput = document.getElementById('import-site-input');
+                if (siteInput) siteInput.value = currentPlSite;
                 const listedVersion = Number(pl.version || 1);
                 if (Number(previousId) !== plId) currentPlEtag = null;
                 currentPlVersion = Number.isFinite(listedVersion) ? listedVersion : 1;
             }
 
-            const css = isActive
-                ? 'border-blue-600 text-blue-700 bg-blue-50/50 hover:bg-blue-100'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100';
             const dragAttributes = canEdit
                 ? 'draggable="true" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondragenter="handleDragEnter(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)" ondragend="handleDragEnd(event)"'
                 : 'draggable="false"';
 
-            html += `<button ${dragAttributes} data-id="${plId}" data-version="${Number(pl.version || 1)}" onclick="seleccionarTab(${plId})" class="tab-item mb-1 shrink-0 rounded-md px-4 py-2 text-[12px] font-bold uppercase tracking-wider shadow-sm ${css} transition-colors">${escapeHtml(pl.nombre)}</button>`;
+            html += `<button ${dragAttributes} data-id="${plId}" data-version="${Number(pl.version || 1)}" onclick="seleccionarTab(${plId})" class="tab-item ${isActive ? 'is-active' : ''}"><span><strong>${escapeHtml(pl.nombre)}</strong><small>${escapeHtml(pl.site || 'Sin site')}</small></span><i class="material-symbols-rounded">chevron_right</i></button>`;
         });
 
         if (canEdit) {
-            html += `<button onclick="abrirModalPL('modal-nuevo-pl', 'box-nuevo-pl', 'input-nuevo-pl')" class="mb-1 ml-1 flex shrink-0 items-center gap-1 rounded-md border border-dashed border-blue-300 bg-white px-3 py-2 text-[12px] font-bold text-blue-700 transition-colors hover:bg-blue-50"><span class="material-symbols-rounded text-[16px]">add</span> Lista</button>`;
+            html += `<button onclick="abrirModalPL('modal-nuevo-pl', 'box-nuevo-pl', 'input-nuevo-pl')" class="production-add-pl"><span class="material-symbols-rounded">add</span>Agregar Packing List</button>`;
         }
         container.innerHTML = html;
         if (currentPlId) {
@@ -476,6 +540,7 @@ function seleccionarTab(id) {
     }
 
     setPendingImport(false);
+    pendingImportMeta = null;
     currentPlId = nextId;
     currentPlVersion = null;
     currentPlEtag = null;
@@ -1007,11 +1072,14 @@ async function sincronizarComponentesBD() {
                 procesosProd.forEach(proc => {
                     if (proc === 'des') return;
                     const input = tr.querySelector(`.proc-${proc}`);
-                    const remoteValue = Number(bdComp[`${proc}_real`]);
+                    const rawRemoteValue = bdComp[`${proc}_real`];
+                    const remoteValue = rawRemoteValue === null || rawRemoteValue === undefined
+                        ? ''
+                        : String(rawRemoteValue);
                     if (
                         input
                         && document.activeElement !== input
-                        && Number(input.value) !== remoteValue
+                        && input.value !== remoteValue
                     ) {
                         input.value = remoteValue;
                         validarYCalcular(input, cant, proc, true, true);
@@ -1031,6 +1099,11 @@ async function sincronizarComponentesBD() {
                 validarYCalcular(inputDespacho, cant, 'des', true, true);
                 matrixChanged = true;
             }
+
+            tr.dataset.fechaInicioReal = String(bdComp.fecha_inicio_real || '');
+            tr.dataset.fechaTerminoReal = String(
+                bdComp.fecha_termino_real || bdComp.fecha_realizacion || ''
+            );
 
             const alertButton = tr.querySelector('button[title="Reportar incidencia"]');
             if (alertButton) {
@@ -1076,6 +1149,15 @@ async function guardarCampoComponente(componentId, campo, valor) {
             throw new Error(responseError(data, "No se pudo guardar el cambio."));
         }
         updatePackingListVersion(res, data);
+        const row = document.querySelector(`#matriz-body tr[data-id="${CSS.escape(String(componentId))}"]`);
+        Object.entries(data.adjusted_fields || {}).forEach(([fieldName, adjustedValue]) => {
+            const processKey = fieldName.replace(/_real$/, '');
+            const adjustedInput = row?.querySelector(`.proc-${processKey}`);
+            if (!adjustedInput) return;
+            adjustedInput.value = String(adjustedValue);
+            adjustedInput.dataset.lastValidValue = String(adjustedValue);
+            paintProcessCell(row, processKey, Number(adjustedValue), Number(row.dataset.cant || 0));
+        });
         return true;
     } catch (error) {
         mostrarAlerta(error.message || "No se pudo guardar el cambio.", "error");
@@ -1136,10 +1218,12 @@ async function guardarPackingListBD() {
     const componentes = [];
     filas.forEach(fila => {
         const tipoRow = fila.dataset.tipo || 'fab';
-        const isSuministro = (
-            tipoRow !== 'fab'
-            && tipoRow !== 'fabricacion'
+        const categoriaRow = fila.dataset.categoria || (
+            tipoRow === 'fab' || tipoRow === 'fabricacion'
+                ? 'FABRICACION'
+                : 'SUMINISTRO'
         );
+        const isSuministro = categoriaRow !== 'FABRICACION';
         const values = {};
 
         if (!isSuministro) {
@@ -1147,8 +1231,8 @@ async function guardarPackingListBD() {
                 if (process === 'des') return;
                 const input = fila.querySelector(`.proc-${process}`);
                 values[process] = input
-                    ? (Number.parseFloat(input.value) || 0)
-                    : -1;
+                    ? optionalProgressNumber(input.value)
+                    : null;
             });
         }
 
@@ -1165,14 +1249,27 @@ async function guardarPackingListBD() {
             cantidad: Number.parseInt(fila.dataset.cant, 10) || 0,
             descripcion: fila.cells[3].innerText.trim(),
             longitud: fila.cells[4].innerText.trim(),
-            hab: values.hab ?? -1,
-            arm: values.arm ?? -1,
-            sol: values.sol ?? -1,
-            lim: values.lim ?? -1,
-            lib: values.lib ?? -1,
-            gal: values.gal ?? -1,
-            are: values.are ?? -1,
-            pin: values.pin ?? -1,
+            categoria: categoriaRow,
+            subcategoria: fila.dataset.subcategoria || null,
+            unidad: fila.dataset.unidad || 'UND',
+            ubicacion: fila.dataset.ubicacion || '',
+            perfil: fila.dataset.perfil || '',
+            material: fila.dataset.material || '',
+            longitud_mm: fila.dataset.longitudMm || null,
+            area_unitaria_m2: fila.dataset.areaUnitariaM2 || null,
+            area_total_m2: fila.dataset.areaTotalM2 || null,
+            peso_unitario_kg: fila.dataset.pesoUnitarioKg || null,
+            peso_total_kg: fila.dataset.pesoTotalKg || null,
+            fila_origen: fila.dataset.filaOrigen || null,
+            ruta_codigo: fila.dataset.rutaCodigo || null,
+            hab: values.hab ?? null,
+            arm: values.arm ?? null,
+            sol: values.sol ?? null,
+            lim: values.lim ?? null,
+            lib: values.lib ?? null,
+            gal: values.gal ?? null,
+            are: values.are ?? null,
+            pin: values.pin ?? null,
             des: values.des || 0,
             alerta: fila.classList.contains('row-alert'),
             tipo: tipoRow,
@@ -1182,7 +1279,9 @@ async function guardarPackingListBD() {
             operario: inputOperario
                 ? inputOperario.value.trim()
                 : '',
-            fecha_realizacion: fila.dataset.fechaRealizacion || null
+            fecha_realizacion: fila.dataset.fechaTerminoReal || null,
+            fecha_inicio_real: fila.dataset.fechaInicioReal || null,
+            fecha_termino_real: fila.dataset.fechaTerminoReal || null
         });
     });
 
@@ -1197,6 +1296,13 @@ async function guardarPackingListBD() {
 
     setImportBusy(true);
     try {
+        const importMetadata = pendingImportMeta
+            ? {
+                ...pendingImportMeta,
+                site: document.getElementById('import-site-input')?.value.trim() || '',
+                ruta_codigo: document.getElementById('import-route-select')?.value || ''
+            }
+            : { schema_version: 1 };
         const res = await fetch('/api/produccion/importar', {
             method: 'POST',
             headers: {
@@ -1206,7 +1312,8 @@ async function guardarPackingListBD() {
             body: JSON.stringify({
                 pl_id: currentPlId,
                 expected_version: Number(currentPlVersion),
-                componentes
+                componentes,
+                import_meta: importMetadata
             })
         });
         const data = await readJsonResponse(res);
@@ -1236,6 +1343,7 @@ async function guardarPackingListBD() {
         updatePackingListVersion(res, data);
         loadedComponentsFingerprint = currentFingerprint;
         setPendingImport(false);
+        pendingImportMeta = null;
         mostrarAlerta(
             `Guardado: ${data.imported_count ?? componentes.length} elementos.`,
             "exito"
@@ -1261,6 +1369,7 @@ function renderizarTabla(componentes, isFromDB) {
             : 'Esta lista todavía no tiene elementos registrados.';
         tbody.innerHTML = `<tr><td colspan="40" class="px-4 py-20 text-center bg-white"><div class="flex flex-col items-center justify-center"><span class="material-symbols-rounded text-[36px] text-slate-200 mb-2 block">grid_on</span><h4 class="text-[13px] font-bold text-slate-600 mb-0.5">Matriz Vacía</h4><p class="text-[11px] text-slate-400 font-medium">${emptyMessage}</p></div></td></tr>`;
         document.getElementById('contador-piezas').innerText = '0 Regs';
+        actualizarResumenElementos([]);
         recalcularMatriz();
         window.requestAnimationFrame(ajustarAlturaMatriz);
         return;
@@ -1277,7 +1386,7 @@ function renderizarTabla(componentes, isFromDB) {
         grupos[catNombre].push(comp);
     });
 
-    let totalCols = 9;
+    let totalCols = 11;
     procesosProd.forEach(p => { if (p !== 'des' && activeProcs[p]) totalCols += 3; });
 
     ordenGrupos.forEach(categoria => {
@@ -1286,8 +1395,11 @@ function renderizarTabla(componentes, isFromDB) {
 
 
         const trHeader = document.createElement('tr');
-        trHeader.innerHTML = `<td colspan="${totalCols}" class="sticky left-0 z-10 border-y border-slate-200 bg-slate-50 px-4 py-3">
+        const isFabricationGroup = categoria === 'MATERIALES DE FABRICACIÓN';
+        trHeader.className = `production-group-row ${isFabricationGroup ? 'is-fabrication' : 'is-supply'}`;
+        trHeader.innerHTML = `<td colspan="${totalCols}" class="sticky left-0 z-10 border-y border-slate-200 px-4 py-3">
             <div class="flex items-center gap-2">
+                <span class="production-group-scope">${isFabricationGroup ? 'Producción' : 'Abastecimiento'}</span>
                 <span class="text-slate-700 font-black text-[11px] uppercase tracking-widest">${escapeHtml(categoria)}</span>
                 <span class="text-slate-500 font-bold ml-1 text-[10px] bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">${items.length} regs</span>
             </div>
@@ -1301,17 +1413,39 @@ function renderizarTabla(componentes, isFromDB) {
             const long = comp.longitud || '0.0';
             const dbId = isFromDB ? comp.id : null;
             const tipo = comp.tipo || 'fab';
-            const isSuministro = tipo !== 'fab' && tipo !== 'fabricacion';
+            const categoria = comp.categoria || (
+                tipo === 'fab' || tipo === 'fabricacion'
+                    ? 'FABRICACION'
+                    : (tipo === 'p_template' || tipo === 'p_torre' || tipo === 'perneria'
+                        ? 'PERNERIA'
+                        : 'SUMINISTRO')
+            );
+            const isSuministro = categoria !== 'FABRICACION';
             const operario = comp.operario || '';
-            const fechaRealizacion = comp.fecha_realizacion || '';
+            const fechaInicioReal = comp.fecha_inicio_real || '';
+            const fechaTerminoReal = comp.fecha_termino_real || comp.fecha_realizacion || '';
             const estadoSuministro = comp.estado_suministro || 'No requerido';
 
             const safeMarca = escapeHtml(marca);
             const safeDescription = escapeHtml(desc);
             const safeLength = escapeHtml(long);
             const safeOperator = escapeHtml(operario);
+            const weightUnit = Number(comp.peso_unitario_kg || 0);
+            const weightTotal = Number(comp.peso_total_kg || 0);
+            const safeWeightUnit = formatearPesoKg(weightUnit, false);
+            const safeWeightTotal = formatearPesoKg(weightTotal, false);
 
-            const v = { hab: isFromDB ? comp.hab_real : -1, arm: isFromDB ? comp.arm_real : -1, sol: isFromDB ? comp.sol_real : -1, lim: isFromDB ? comp.lim_real : -1, lib: isFromDB ? comp.lib_real : -1, gal: isFromDB ? comp.gal_real : -1, are: isFromDB ? comp.are_real : -1, pin: isFromDB ? comp.pin_real : -1, des: isFromDB ? comp.des_real : 0 };
+            const v = {
+                hab: optionalProgressNumber(comp.hab ?? comp.hab_real),
+                arm: optionalProgressNumber(comp.arm ?? comp.arm_real),
+                sol: optionalProgressNumber(comp.sol ?? comp.sol_real),
+                lim: optionalProgressNumber(comp.lim ?? comp.lim_real),
+                lib: optionalProgressNumber(comp.lib ?? comp.lib_real),
+                gal: optionalProgressNumber(comp.gal ?? comp.gal_real),
+                are: optionalProgressNumber(comp.are ?? comp.are_real),
+                pin: optionalProgressNumber(comp.pin ?? comp.pin_real),
+                des: optionalProgressNumber(comp.des ?? comp.des_real) ?? 0
+            };
             const alerta = isFromDB ? comp.alerta : false; const alertClass = alerta ? 'row-alert' : ''; const alertIcon = alerta ? '<span class="material-symbols-rounded text-[18px] text-red-500">warning</span>' : '<span class="material-symbols-rounded text-[18px] text-slate-300 hover:text-slate-500 transition-colors">emoji_flags</span>';
             const alertControl = canEdit
                 ? `<button onclick="toggleAlertaFila(this)" class="w-6 h-6 rounded flex items-center justify-center transition mx-auto" title="Reportar incidencia">${alertIcon}</button>`
@@ -1320,7 +1454,21 @@ function renderizarTabla(componentes, isFromDB) {
             const tr = document.createElement('tr');
             tr.className = `hover:bg-slate-50 bg-white transition-colors group border-b border-slate-100 ${alertClass}`;
             tr.dataset.cant = cant; tr.dataset.tipo = tipo;
-            tr.dataset.fechaRealizacion = fechaRealizacion;
+            tr.dataset.categoria = categoria;
+            tr.dataset.subcategoria = comp.subcategoria || '';
+            tr.dataset.unidad = comp.unidad || 'UND';
+            tr.dataset.ubicacion = comp.ubicacion || '';
+            tr.dataset.perfil = comp.perfil || '';
+            tr.dataset.material = comp.material || '';
+            tr.dataset.longitudMm = comp.longitud_mm ?? '';
+            tr.dataset.areaUnitariaM2 = comp.area_unitaria_m2 ?? '';
+            tr.dataset.areaTotalM2 = comp.area_total_m2 ?? '';
+            tr.dataset.pesoUnitarioKg = comp.peso_unitario_kg ?? '';
+            tr.dataset.pesoTotalKg = comp.peso_total_kg ?? '';
+            tr.dataset.filaOrigen = comp.fila_origen ?? '';
+            tr.dataset.rutaCodigo = comp.ruta_codigo || '';
+            tr.dataset.fechaInicioReal = fechaInicioReal;
+            tr.dataset.fechaTerminoReal = fechaTerminoReal;
             if (dbId) tr.dataset.id = dbId;
 
             let html = `<td class="px-1 py-1.5 border-r border-slate-100 sticky-c-alert bg-white text-center align-middle group-hover:bg-slate-50 transition-colors">${alertControl}</td>
@@ -1328,6 +1476,8 @@ function renderizarTabla(componentes, isFromDB) {
                 <td class="px-1 py-1.5 text-center font-black text-blue-700 border-r border-slate-100 sticky-c2 bg-white align-middle group-hover:bg-slate-50 transition-colors">${cant}</td>
                 <td class="px-3 py-1.5 text-left truncate text-[11px] border-r border-slate-100 sticky-c3 bg-white align-middle group-hover:bg-slate-50 transition-colors" title="${safeDescription}">${safeDescription}</td>
                 <td class="px-1 py-1.5 text-center text-slate-500 border-r border-slate-100 text-[11px] sticky-c4 bg-white align-middle group-hover:bg-slate-50 transition-colors">${safeLength}</td>
+                <td class="production-weight-cell is-unit" title="Peso unitario">${safeWeightUnit}</td>
+                <td class="production-weight-cell is-total" title="Peso total planificado">${safeWeightTotal}</td>
                 <td class="px-1 py-1.5 border-r border-slate-200 sticky-c5 bg-white shadow-right align-middle text-center group-hover:bg-slate-50 transition-colors">
                     <input type="hidden" class="input-operario" value="${safeOperator}">
                     <button type="button" class="btn-detalle text-slate-400 transition-colors" title="${canEdit ? 'Abrir ficha y gestionar procesos' : 'Abrir ficha del elemento'}" aria-label="Abrir ficha del elemento ${safeMarca}">
@@ -1361,11 +1511,15 @@ function renderizarTabla(componentes, isFromDB) {
                 procesosProd.forEach(proc => {
                     if (proc === 'des') return;
                     const isHidden = !activeProcs[proc] ? 'display: none;' : '';
-                    const isNA = v[proc] === -1;
+                    const value = v[proc];
+                    const valueAttribute = value === null ? '' : value;
+                    const percentage = value === null || cant <= 0
+                        ? '—'
+                        : `${((value / cant) * 100).toFixed(1)}%`;
 
-                    html += `<td class="px-1 py-1.5 text-center border-r border-slate-100 font-bold text-slate-400 col-${proc} align-middle" style="${isHidden}">${isNA ? '-' : cant}</td>
-                        <td class="production-process-real-cell px-1 py-1.5 border-r border-slate-100 col-${proc} align-middle" style="${isHidden}"><input type="number" value="${v[proc]}" min="-1" max="${cant}" ${canEdit ? `oninput="validarYCalcular(this, ${cant}, '${proc}')"` : 'disabled aria-readonly="true"'} class="cell-input proc-${proc} ${isNA ? 'is-not-applicable' : ''} ${canEdit ? '' : 'cursor-default bg-slate-50'}">${isNA ? '<span class="production-process-na-label" aria-hidden="true">N/A</span>' : ''}</td>
-                        <td class="px-1 py-1.5 text-center font-medium text-slate-400 bg-white border-r border-slate-200 pct-${proc} col-${proc} align-middle group-hover:bg-slate-50 transition-colors" style="${isHidden}">${isNA ? 'N/A' : '0.0%'}</td>`;
+                    html += `<td class="px-1 py-1.5 text-center border-r border-slate-100 font-bold text-slate-500 col-${proc} align-middle" style="${isHidden}">${cant}</td>
+                        <td class="production-process-real-cell px-1 py-1.5 border-r border-slate-100 col-${proc} align-middle" style="${isHidden}"><input type="number" value="${valueAttribute}" placeholder="—" min="0" max="${cant}" step="1" data-last-valid-value="${valueAttribute}" ${canEdit ? `onchange="validarYCalcular(this, ${cant}, '${proc}')"` : 'disabled aria-readonly="true"'} class="cell-input proc-${proc} ${canEdit ? '' : 'cursor-default bg-slate-50'}" aria-label="Avance ${proc} de ${safeMarca}"></td>
+                        <td class="px-1 py-1.5 text-center font-medium text-slate-400 bg-white border-r border-slate-200 pct-${proc} col-${proc} align-middle group-hover:bg-slate-50 transition-colors" style="${isHidden}">${percentage}</td>`;
                 });
             }
 
@@ -1383,7 +1537,7 @@ function renderizarTabla(componentes, isFromDB) {
             tableFragment.appendChild(tr); piezas++;
 
             if(!isSuministro) {
-                procesosProd.forEach(proc => { if(proc !== 'des') { const inp = tr.querySelector(`.proc-${proc}`); if (inp && inp.value !== 0 && inp.value !== "0") validarYCalcular(inp, cant, proc, true, true); }});
+                procesosProd.forEach(proc => { if(proc !== 'des') { const inp = tr.querySelector(`.proc-${proc}`); if (inp && inp.value !== '') validarYCalcular(inp, cant, proc, true, true); }});
             }
             const inpDes = tr.querySelector('.proc-des');
             if(inpDes && inpDes.value > 0) validarYCalcular(inpDes, cant, 'des', true, true);
@@ -1394,8 +1548,120 @@ function renderizarTabla(componentes, isFromDB) {
 
     const lbl = document.getElementById('contador-piezas');
     if(lbl) lbl.innerText = `${piezas} Regs`;
+    actualizarResumenElementos(componentes);
     recalcularMatriz();
     window.requestAnimationFrame(ajustarAlturaMatriz);
+}
+
+async function cargarRutasProduccion() {
+    const routeInput = document.getElementById('import-route-select');
+    if (!routeInput || !canEdit) return;
+    try {
+        const response = await fetch('/api/produccion/rutas', {
+            headers: { 'Accept': 'application/json' }
+        });
+        const payload = await readJsonResponse(response);
+        if (!response.ok || !payload.success) {
+            throw new Error(responseError(payload, 'No se cargaron las rutas.'));
+        }
+        productionRoutes = Array.isArray(payload.rutas) ? payload.rutas : [];
+        const previous = routeInput.value;
+        renderizarOpcionesRutaImportacion();
+        seleccionarRutaImportacion(
+            productionRoutes.some(route => route.codigo === previous)
+                ? previous
+                : '',
+            { closeMenu: false }
+        );
+    } catch (error) {
+        console.error('No se pudieron cargar las rutas V2:', error);
+        mostrarAlerta('No se pudieron preparar las rutas de fabricación.', 'error');
+    }
+}
+
+function cerrarMenuRutaImportacion() {
+    const menu = document.getElementById('import-route-menu');
+    const trigger = document.getElementById('import-route-trigger');
+    if (menu) menu.hidden = true;
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+
+function toggleImportRouteMenu(event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const menu = document.getElementById('import-route-menu');
+    const trigger = document.getElementById('import-route-trigger');
+    if (!menu || !trigger) return;
+    const willOpen = menu.hidden;
+    menu.hidden = !willOpen;
+    trigger.setAttribute('aria-expanded', String(willOpen));
+}
+
+function seleccionarRutaImportacion(routeCode, options = {}) {
+    const routeInput = document.getElementById('import-route-select');
+    const label = document.getElementById('import-route-label');
+    const trigger = document.getElementById('import-route-trigger');
+    const selectedRoute = productionRoutes.find(route => route.codigo === routeCode);
+    if (routeInput) routeInput.value = selectedRoute?.codigo || '';
+    if (label) label.textContent = selectedRoute?.nombre || 'Ruta de fabricación';
+    if (trigger) {
+        const processNames = (selectedRoute?.procesos || [])
+            .map(step => step.proceso?.nombre)
+            .filter(Boolean)
+            .join(' → ');
+        trigger.title = processNames || 'Seleccionar ruta de fabricación';
+    }
+    document.querySelectorAll('#import-route-menu [data-route-code]').forEach(option => {
+        const isSelected = option.dataset.routeCode === (selectedRoute?.codigo || '');
+        option.classList.toggle('is-selected', isSelected);
+        option.setAttribute('aria-selected', String(isSelected));
+    });
+    if (options.closeMenu !== false) cerrarMenuRutaImportacion();
+}
+
+function renderizarOpcionesRutaImportacion() {
+    const menu = document.getElementById('import-route-menu');
+    if (!menu) return;
+    menu.replaceChildren();
+
+    const createOption = (routeCode, title, description = '') => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.dataset.routeCode = routeCode;
+        option.setAttribute('role', 'option');
+        const strong = document.createElement('strong');
+        strong.textContent = title;
+        option.appendChild(strong);
+        if (description) {
+            const small = document.createElement('small');
+            small.textContent = description;
+            option.appendChild(small);
+        }
+        option.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            seleccionarRutaImportacion(routeCode);
+        });
+        menu.appendChild(option);
+    };
+
+    createOption('', 'Seleccionar ruta', 'Define el flujo para los elementos de fabricación.');
+    productionRoutes.forEach(route => {
+        const processNames = (route.procesos || [])
+            .map(step => step.proceso?.nombre)
+            .filter(Boolean)
+            .join(' → ');
+        createOption(route.codigo, route.nombre, processNames);
+    });
+}
+
+function configurarSelectorRutaImportacion() {
+    document.addEventListener('click', event => {
+        if (!event.target.closest('#production-route-picker')) cerrarMenuRutaImportacion();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') cerrarMenuRutaImportacion();
+    });
 }
 
 function normalizarEtiquetaExcel(value) {
@@ -1403,7 +1669,202 @@ function normalizarEtiquetaExcel(value) {
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .trim()
-        .toUpperCase();
+        .toUpperCase()
+        .replace(/\s+/g, ' ');
+}
+
+function numeroExcel(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    let text = String(value ?? '').trim().replace(/\s/g, '');
+    if (!text) return null;
+    text = text.replace(/[^0-9,.-]/g, '');
+    if (!text || text === '-' || text === '.' || text === ',') return null;
+    const comma = text.lastIndexOf(',');
+    const dot = text.lastIndexOf('.');
+    if (comma !== -1 && dot !== -1) {
+        const decimalSeparator = comma > dot ? ',' : '.';
+        const thousandsSeparator = decimalSeparator === ',' ? /\./g : /,/g;
+        text = text.replace(thousandsSeparator, '');
+        if (decimalSeparator === ',') text = text.replace(',', '.');
+    } else if (comma !== -1) {
+        text = text.replace(',', '.');
+    }
+    const parsed = Number.parseFloat(text);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatearPesoKg(value, includeUnit = true) {
+    const weight = Number(value);
+    if (!Number.isFinite(weight) || weight <= 0) {
+        return includeUnit ? '0.0 kg' : '—';
+    }
+    const formatted = weight.toLocaleString('es-PE', {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1
+    });
+    return includeUnit ? `${formatted} kg` : formatted;
+}
+
+function actualizarResumenElementos(componentes) {
+    const rows = Array.isArray(componentes) ? componentes : [];
+    const fabrication = rows.filter(component => (
+        String(component.categoria || 'FABRICACION').toUpperCase() === 'FABRICACION'
+    ));
+    const supply = rows.filter(component => (
+        String(component.categoria || 'FABRICACION').toUpperCase() !== 'FABRICACION'
+    ));
+    const plannedWeight = fabrication.reduce(
+        (sum, component) => sum + (Number(component.peso_total_kg) || 0),
+        0
+    );
+    const activeRoute = fabrication.find(component => component.ruta_codigo)?.ruta_codigo || '';
+
+    const weightElement = document.getElementById('global-peso-fabricacion');
+    const summaryWeightElement = document.getElementById('production-summary-weight');
+    const siteElement = document.getElementById('production-active-site');
+    const routeElement = document.getElementById('production-active-route');
+    const fabricationElement = document.getElementById('contador-fabricacion');
+    const supplyElement = document.getElementById('contador-abastecimiento');
+    if (weightElement) weightElement.textContent = formatearPesoKg(plannedWeight);
+    if (summaryWeightElement) summaryWeightElement.textContent = formatearPesoKg(plannedWeight);
+    if (siteElement) siteElement.textContent = currentPlSite || currentPlName || 'Sin site';
+    if (routeElement) routeElement.textContent = activeRoute
+        ? activeRoute.replaceAll('_', ' ')
+        : 'Sin ruta asignada';
+    if (fabricationElement) fabricationElement.textContent = `${fabrication.length} fabricación`;
+    if (supplyElement) supplyElement.textContent = `${supply.length} abastecimiento`;
+}
+
+function canonicalizarCodigoOt(value, requiereEtiqueta = false) {
+    const text = normalizarEtiquetaExcel(value);
+    const expression = requiereEtiqueta
+        ? /(?:\bOT\b|N[º°O.]?\s*O\.?\s*T\.?)\s*[:#-]?\s*(20\d{2}|\d{2})\s*[-_/]\s*(\d{1,4})\b/
+        : /(?:\bOT\b|N[º°O.]?\s*O\.?\s*T\.?)?\s*(20\d{2}|\d{2})\s*[-_/]\s*(\d{1,4})\b/;
+    const match = text.match(expression);
+    if (!match) return null;
+    const year = match[1].length === 2 ? `20${match[1]}` : match[1];
+    return `${year}-${String(Number.parseInt(match[2], 10)).padStart(4, '0')}`;
+}
+
+function detectarReferenciasOt(fileName, rows) {
+    const detectedInWorkbook = new Set();
+    const collect = (value, requiereEtiqueta = false) => {
+        const code = canonicalizarCodigoOt(value, requiereEtiqueta);
+        if (code) detectedInWorkbook.add(code);
+    };
+    rows.slice(0, 40).forEach(row => {
+        if (!Array.isArray(row)) return;
+        collect(row.join(' '), true);
+    });
+    return {
+        fileNameCode: canonicalizarCodigoOt(fileName),
+        workbookCodes: Array.from(detectedInWorkbook)
+    };
+}
+
+function indiceEncabezado(headers, tests) {
+    return headers.findIndex(header => tests.some(test => (
+        typeof test === 'string' ? header.includes(test) : test.test(header)
+    )));
+}
+
+function detectarColumnasExcel(row) {
+    if (!Array.isArray(row)) return null;
+    const headers = row.map(normalizarEtiquetaExcel);
+    const columns = {
+        marca: indiceEncabezado(headers, ['MARCA', 'CODIGO', /^X3$/]),
+        cantidad: indiceEncabezado(headers, ['CANTIDAD', /^CANT\b/, 'CANT T']),
+        unidad: indiceEncabezado(headers, [/^UND\b/, 'UNIDAD']),
+        descripcion: indiceEncabezado(headers, ['DESCRIP']),
+        ubicacion: indiceEncabezado(headers, ['UBICACION', 'ZONA', 'LOCALIZACION']),
+        perfil: indiceEncabezado(headers, ['PERFIL', 'SECCION']),
+        material: indiceEncabezado(headers, ['MATERIAL', 'CALIDAD']),
+        longitud: indiceEncabezado(headers, ['LONGITUD', /^LONG\b/, /^L\s*\[?MM/]),
+        areaUnit: indiceEncabezado(headers, [/AREA.*(U\.?|UNIT)/]),
+        areaTotal: indiceEncabezado(headers, [/AREA.*(T\.?|TOTAL)/]),
+        pesoUnit: indiceEncabezado(headers, [/PESO.*(U\.?|UNIT)/]),
+        pesoTotal: indiceEncabezado(headers, [/PESO.*(T\.?|TOTAL)/]),
+        fecha: indiceEncabezado(headers, [
+            /^FECHA$/,
+            /FECHA.*(FABRIC|REALIZ|TERMIN|FINAL)/
+        ])
+    };
+    return columns.marca !== -1 && columns.cantidad !== -1 ? columns : null;
+}
+
+function detectarColumnasAbastecimiento(row) {
+    if (!Array.isArray(row)) return null;
+    const headers = row.map(normalizarEtiquetaExcel);
+    const cantidad = indiceEncabezado(headers, ['CANTIDAD', /^CANT\b/, 'CANT T']);
+    const descripcion = indiceEncabezado(headers, ['DESCRIP']);
+    if (cantidad === -1 || descripcion === -1) return null;
+    return {
+        marca: indiceEncabezado(headers, ['MARCA', 'CODIGO']),
+        cantidad,
+        unidad: indiceEncabezado(headers, [/^UND\b/, 'UNIDAD']),
+        descripcion,
+        ubicacion: indiceEncabezado(headers, ['UBICACION', 'ZONA', 'LOCALIZACION']),
+        perfil: indiceEncabezado(headers, ['PERFIL', 'SECCION']),
+        material: indiceEncabezado(headers, ['MATERIAL', 'CALIDAD']),
+        longitud: indiceEncabezado(headers, ['LONGITUD', /^LONG\b/, /^L\s*\[?MM/]),
+        areaUnit: indiceEncabezado(headers, [/AREA.*(U\.?|UNIT)/]),
+        areaTotal: indiceEncabezado(headers, [/AREA.*(T\.?|TOTAL)/]),
+        pesoUnit: indiceEncabezado(headers, [/PESO.*(U\.?|UNIT)/]),
+        pesoTotal: indiceEncabezado(headers, [/PESO.*(T\.?|TOTAL)/]),
+        fecha: indiceEncabezado(headers, [
+            /^FECHA$/,
+            /FECHA.*(FABRIC|REALIZ|TERMIN|FINAL)/
+        ])
+    };
+}
+
+function unidadCantidadExcel(value, fallback = '') {
+    const explicitUnit = String(fallback || '').trim().toUpperCase();
+    if (explicitUnit) return explicitUnit;
+    const match = String(value ?? '').trim().toUpperCase().match(/[A-ZÁÉÍÓÚÑ]+/);
+    return match ? match[0] : 'UND';
+}
+
+function prefijoAbastecimiento(section) {
+    const key = `${section.categoria}:${section.subcategoria || ''}`;
+    return {
+        'PERNERIA:TEMPLATE': 'P-TEMP',
+        'PERNERIA:TORRE': 'P-TOR',
+        'SUMINISTRO:CABLE_DE_VIDA': 'CV',
+        'SUMINISTRO:SISTEMA_DE_VIENTOS': 'SV',
+        'SUMINISTRO:OTROS': 'SUM'
+    }[key] || 'SUM';
+}
+
+function clasificarSeccionExcel(value) {
+    const text = normalizarEtiquetaExcel(value);
+    if (text.includes('PERNERIA TEMPLATE')) {
+        return { tipo: 'p_template', categoria: 'PERNERIA', subcategoria: 'TEMPLATE' };
+    }
+    if (text.includes('PERNERIA TORRE')) {
+        return { tipo: 'p_torre', categoria: 'PERNERIA', subcategoria: 'TORRE' };
+    }
+    if (/CABLES? DE VIDA/.test(text)) {
+        return { tipo: 'c_vida', categoria: 'SUMINISTRO', subcategoria: 'CABLE_DE_VIDA' };
+    }
+    if (text.includes('SISTEMA DE VIENTOS')) {
+        return { tipo: 'vientos', categoria: 'SUMINISTRO', subcategoria: 'SISTEMA_DE_VIENTOS' };
+    }
+    if (text.includes('OTROS SUMINISTROS') || text === 'SUMINISTROS') {
+        return { tipo: 'suministro', categoria: 'SUMINISTRO', subcategoria: 'OTROS' };
+    }
+    if (
+        text.includes('MATERIALES DE FABRICACION')
+        || text.includes('MATERIALES PARA FABRICACION')
+        || text === 'FABRICACION'
+    ) {
+        return { tipo: 'fab', categoria: 'FABRICACION', subcategoria: null };
+    }
+    return null;
+}
+
+function valorColumna(row, index) {
+    return index >= 0 && index < row.length ? row[index] : '';
 }
 
 function fechaExcelIso(value) {
@@ -1431,9 +1892,10 @@ function importarPackingList(event) {
     if (!canEdit || !currentPlId) return;
     const file = event.target.files[0];
     if (!file) return;
+    pendingImportMeta = null;
 
     const reader = new FileReader();
-    reader.onload = function(loadEvent) {
+    reader.onload = async function(loadEvent) {
         try {
             const data = new Uint8Array(loadEvent.target.result);
             const workbook = XLSX.read(data, { type: 'array', cellDates: true });
@@ -1443,27 +1905,57 @@ function importarPackingList(event) {
                 defval: ""
             });
 
-            let headerRowIdx = -1;
-            for (let index = 0; index < Math.min(json.length, 30); index++) {
-                const row = json[index];
-                if (!row || !Array.isArray(row)) continue;
-                const isHeader = row.some(cell => {
-                    if (typeof cell !== 'string') return false;
-                    const text = cell.toUpperCase();
-                    return (
-                        text.includes('MARCA')
-                        || text.includes('CÓDIGO')
-                        || text.includes('CODIGO')
-                        || text === 'X3'
+            const otReferences = detectarReferenciasOt(file.name, json);
+            const detectedOtCodes = otReferences.workbookCodes;
+            const expectedOtCode = canonicalizarCodigoOt(
+                window.ProduccionConfig.otOt
+            );
+            const mismatchedOtCodes = detectedOtCodes.filter(
+                code => expectedOtCode && code !== expectedOtCode
+            );
+            let otMismatchConfirmed = false;
+            if (mismatchedOtCodes.length) {
+                const canConfirmStaleHeader = (
+                    otReferences.fileNameCode === expectedOtCode
+                    && detectedOtCodes.length === 1
+                );
+                if (!canConfirmStaleHeader) {
+                    mostrarAlerta(
+                        `Importación bloqueada: esta pantalla corresponde a ${expectedOtCode}, pero el Excel contiene ${mismatchedOtCodes.join(', ')}.`,
+                        'error'
                     );
-                });
-                if (isHeader) {
-                    headerRowIdx = index;
+                    return;
+                }
+                otMismatchConfirmed = await solicitarConfirmacionDiferenciaOt(
+                    expectedOtCode,
+                    mismatchedOtCodes[0]
+                );
+                if (!otMismatchConfirmed) return;
+            } else if (
+                otReferences.fileNameCode
+                && expectedOtCode
+                && otReferences.fileNameCode !== expectedOtCode
+                && !detectedOtCodes.includes(expectedOtCode)
+            ) {
+                mostrarAlerta(
+                    `Importación bloqueada: el nombre del archivo indica ${otReferences.fileNameCode}, no ${expectedOtCode}.`,
+                    'error'
+                );
+                return;
+            }
+
+            let currentColumns = null;
+            let firstHeaderRow = -1;
+            for (let index = 0; index < Math.min(json.length, 40); index++) {
+                const detectedColumns = detectarColumnasExcel(json[index]);
+                if (detectedColumns) {
+                    currentColumns = detectedColumns;
+                    firstHeaderRow = index;
                     break;
                 }
             }
 
-            if (headerRowIdx === -1) {
+            if (!currentColumns) {
                 mostrarAlerta(
                     "No se detectó el formato del Packing List.",
                     "error"
@@ -1471,110 +1963,183 @@ function importarPackingList(event) {
                 return;
             }
 
-            const headers = json[headerRowIdx].map(normalizarEtiquetaExcel);
-            const idxMarca = headers.findIndex(header => (
-                header.includes('MARCA')
-                || header.includes('CÓDIGO')
-                || header.includes('CODIGO')
-                || header === 'X3'
-            ));
-            const idxCant = headers.findIndex(header => (
-                header.includes('CANT')
-                || header === 'CANT T.'
-            ));
-            const idxDesc = headers.findIndex(header => header.includes('DESCRIP'));
-            const idxLong = headers.findIndex(header => header.includes('LONGITUD'));
-            const idxFecha = headers.findIndex(header => (
-                header === 'FECHA'
-                || /FECHA.*(FABRIC|REALIZ|TERMIN|FINAL)/.test(header)
-            ));
-
-            if (idxMarca === -1 || idxCant === -1) {
-                mostrarAlerta(
-                    "El Excel debe incluir las columnas Marca/Código y Cantidad.",
-                    "error"
-                );
-                return;
-            }
-
             const componentes = [];
-            let currentTipo = 'fab';
+            const warnings = [];
+            if (otMismatchConfirmed) {
+                warnings.push(
+                    `Encabezado ${mismatchedOtCodes[0]} confirmado manualmente para ${expectedOtCode}.`
+                );
+            }
+            let currentSection = {
+                tipo: 'fab',
+                categoria: 'FABRICACION',
+                subcategoria: null
+            };
+            const supplyCounters = new Map();
 
-            for (let index = headerRowIdx + 1; index < json.length; index++) {
+            for (let index = firstHeaderRow + 1; index < json.length; index++) {
                 const row = json[index];
                 if (!row || row.length === 0) continue;
 
-                const rowText = row.join(" ").toUpperCase();
-                if (
-                    rowText.includes('PERNERIA TEMPLATE')
-                    || rowText.includes('PERNERÍA TEMPLATE')
-                ) {
-                    currentTipo = 'p_template';
-                    continue;
-                }
-                if (
-                    rowText.includes('PERNERIA TORRE')
-                    || rowText.includes('PERNERÍA TORRE')
-                ) {
-                    currentTipo = 'p_torre';
-                    continue;
-                }
-                if (rowText.includes('SISTEMA DE VIENTOS')) {
-                    currentTipo = 'vientos';
-                    continue;
-                }
-                if (rowText.includes('CABLE DE VIDA')) {
-                    currentTipo = 'c_vida';
-                    continue;
-                }
-
-                const rawMarca = row[idxMarca];
-                const rawCantidad = row[idxCant];
-                if (
-                    typeof rawMarca === 'string'
-                    && rawMarca.toUpperCase() === 'X3'
-                ) continue;
-                if (
-                    typeof rawCantidad === 'string'
-                    && rawCantidad.toUpperCase().includes('CANT')
-                ) continue;
-
-                const marca = String(rawMarca || '').trim();
-                const cantidad = Number.parseFloat(rawCantidad);
-                if (!marca || !Number.isFinite(cantidad) || cantidad <= 0) continue;
-
-                const descripcion = (
-                    idxDesc !== -1 && row[idxDesc]
-                        ? String(row[idxDesc]).toUpperCase().trim()
-                        : ''
+                const rowText = row.join(' ');
+                const candidateQuantity = numeroExcel(
+                    valorColumna(row, currentColumns.cantidad)
                 );
-                const rawLongitud = idxLong !== -1
-                    ? Number.parseFloat(row[idxLong])
-                    : Number.NaN;
+                const candidateMarca = String(
+                    valorColumna(row, currentColumns.marca) || ''
+                ).trim();
+                const candidateDescription = String(
+                    valorColumna(row, currentColumns.descripcion) || ''
+                ).trim();
+                const isStructuredDataRow = (
+                    candidateQuantity !== null
+                    && candidateQuantity > 0
+                    && (
+                        Boolean(candidateMarca)
+                        || (
+                            currentSection.categoria !== 'FABRICACION'
+                            && Boolean(candidateDescription)
+                        )
+                    )
+                );
+                const section = isStructuredDataRow
+                    ? null
+                    : clasificarSeccionExcel(rowText);
+                if (section) {
+                    currentSection = section;
+                    continue;
+                }
+
+                const repeatedHeader = currentSection.categoria === 'FABRICACION'
+                    ? detectarColumnasExcel(row)
+                    : (detectarColumnasAbastecimiento(row) || detectarColumnasExcel(row));
+                if (repeatedHeader) {
+                    currentColumns = repeatedHeader;
+                    continue;
+                }
+
+                const rawMarca = valorColumna(row, currentColumns.marca);
+                const rawCantidad = valorColumna(row, currentColumns.cantidad);
+                const isSupply = currentSection.categoria !== 'FABRICACION';
+                let marca = String(rawMarca || '').trim();
+                const cantidad = numeroExcel(rawCantidad);
+                if ((!marca && !isSupply) || cantidad === null || cantidad <= 0) continue;
+                if (!Number.isInteger(cantidad)) {
+                    warnings.push(`Fila ${index + 1}: la cantidad de ${marca || 'abastecimiento'} no es entera y no se importó.`);
+                    continue;
+                }
+
+                if (!marca) {
+                    const supplyKey = `${currentSection.categoria}:${currentSection.subcategoria || ''}`;
+                    const supplyIndex = (supplyCounters.get(supplyKey) || 0) + 1;
+                    supplyCounters.set(supplyKey, supplyIndex);
+                    marca = `${prefijoAbastecimiento(currentSection)}-${String(supplyIndex).padStart(3, '0')}`;
+                }
+
+                const descripcion = String(
+                    valorColumna(row, currentColumns.descripcion) || ''
+                ).toUpperCase().trim();
+                const longitud = numeroExcel(
+                    valorColumna(row, currentColumns.longitud)
+                );
+                const areaUnit = numeroExcel(
+                    valorColumna(row, currentColumns.areaUnit)
+                );
+                let areaTotal = numeroExcel(
+                    valorColumna(row, currentColumns.areaTotal)
+                );
+                const pesoUnit = numeroExcel(
+                    valorColumna(row, currentColumns.pesoUnit)
+                );
+                let pesoTotal = numeroExcel(
+                    valorColumna(row, currentColumns.pesoTotal)
+                );
+                if (areaTotal === null && areaUnit !== null) {
+                    areaTotal = areaUnit * cantidad;
+                }
+                if (pesoTotal === null && pesoUnit !== null) {
+                    pesoTotal = pesoUnit * cantidad;
+                }
+
+                const selectedRoute = document.getElementById('import-route-select')?.value || '';
 
                 componentes.push({
                     marca,
                     cantidad,
                     descripcion,
-                    longitud: Number.isFinite(rawLongitud)
-                        ? rawLongitud.toFixed(1)
+                    longitud: longitud !== null
+                        ? longitud.toFixed(1)
                         : '0.0',
-                    tipo: currentTipo,
-                    estado_suministro: 'No requerido',
-                    operario: '',
-                    fecha_realizacion: idxFecha !== -1
-                        ? (fechaExcelIso(row[idxFecha]) || null)
+                    longitud_mm: longitud,
+                    unidad: unidadCantidadExcel(
+                        rawCantidad,
+                        valorColumna(row, currentColumns.unidad)
+                    ),
+                    ubicacion: String(
+                        valorColumna(row, currentColumns.ubicacion) || ''
+                    ).trim(),
+                    perfil: String(
+                        valorColumna(row, currentColumns.perfil) || ''
+                    ).trim(),
+                    material: String(
+                        valorColumna(row, currentColumns.material) || ''
+                    ).trim(),
+                    area_unitaria_m2: areaUnit,
+                    area_total_m2: areaTotal,
+                    peso_unitario_kg: pesoUnit,
+                    peso_total_kg: pesoTotal,
+                    fila_origen: index + 1,
+                    tipo: currentSection.tipo,
+                    categoria: currentSection.categoria,
+                    subcategoria: currentSection.subcategoria,
+                    ruta_codigo: currentSection.categoria === 'FABRICACION'
+                        ? selectedRoute
                         : null,
-                    hab: -1,
-                    arm: -1,
-                    sol: -1,
-                    lim: -1,
-                    lib: -1,
-                    gal: -1,
-                    are: -1,
-                    pin: -1,
+                    estado_suministro: currentSection.categoria === 'FABRICACION'
+                        ? 'No requerido'
+                        : 'Pendiente',
+                    operario: '',
+                    fecha_realizacion: currentColumns.fecha !== -1
+                        ? (fechaExcelIso(row[currentColumns.fecha]) || null)
+                        : null,
+                    fecha_inicio_real: null,
+                    fecha_termino_real: currentColumns.fecha !== -1
+                        ? (fechaExcelIso(row[currentColumns.fecha]) || null)
+                        : null,
+                    hab: null,
+                    arm: null,
+                    sol: null,
+                    lim: null,
+                    lib: null,
+                    gal: null,
+                    are: null,
+                    pin: null,
                     des: 0
                 });
+            }
+
+            const fabricationItems = componentes.filter(
+                component => component.categoria === 'FABRICACION'
+            );
+            const supplyItems = componentes.filter(
+                component => component.categoria !== 'FABRICACION'
+            );
+            const routeCode = document.getElementById('import-route-select')?.value || '';
+            if (fabricationItems.length && !routeCode) {
+                mostrarAlerta(
+                    'Selecciona la ruta de fabricación antes de importar el Excel.',
+                    'error'
+                );
+                return;
+            }
+            if (!detectedOtCodes.length) {
+                warnings.push('No se encontró un código OT dentro del archivo ni en su nombre.');
+            }
+            const withoutWeight = fabricationItems.filter(
+                component => !(component.peso_total_kg > 0)
+            ).length;
+            if (withoutWeight) {
+                warnings.push(`${withoutWeight} elementos de fabricación no contienen peso total.`);
             }
 
             if (componentes.length === 0) {
@@ -1585,11 +2150,41 @@ function importarPackingList(event) {
                 return;
             }
 
+            const importedSite = document.getElementById('import-site-input')?.value.trim() || '';
+            const importedFingerprint = stableComponentsFingerprint(componentes);
+            if (
+                loadedComponentsFingerprint !== null
+                && importedFingerprint === loadedComponentsFingerprint
+                && importedSite === String(currentPlSite || '').trim()
+            ) {
+                pendingImportMeta = null;
+                setPendingImport(false);
+                mostrarAlerta(
+                    'El Excel coincide con la información guardada. No hay cambios pendientes.',
+                    'info'
+                );
+                return;
+            }
+
+            pendingImportMeta = {
+                schema_version: 2,
+                archivo: file.name,
+                hoja: workbook.SheetNames[0],
+                site: importedSite,
+                ot_detectadas: detectedOtCodes,
+                ot_diferencia_confirmada: otMismatchConfirmed,
+                ruta_codigo: routeCode,
+                advertencias: warnings
+            };
             renderizarTabla(componentes, false);
             setPendingImport(true);
-            const datedElements = componentes.filter(component => component.fecha_realizacion).length;
+            const datedElements = componentes.filter(component => component.fecha_termino_real).length;
+            const totalWeight = fabricationItems.reduce(
+                (sum, component) => sum + (Number(component.peso_total_kg) || 0),
+                0
+            );
             mostrarAlerta(
-                `Excel cargado: ${componentes.length} elementos${datedElements ? `, ${datedElements} con fecha` : ''} pendientes de guardar.`,
+                `Excel cargado: ${componentes.length} elementos · ${formatearPesoKg(totalWeight)} de fabricación · ${supplyItems.length} de abastecimiento${datedElements ? ` · ${datedElements} con fecha` : ''}${warnings.length ? ` · ${warnings.length} advertencias` : ''}. Pendiente de guardar.`,
                 "info"
             );
         } catch (error) {
@@ -1636,37 +2231,96 @@ function actualizarEstadoSuministro(selectElement) {
     recalcularMatriz();
 }
 
+const PROCESS_SEQUENCES = {
+    GALVANIZADO: ['hab', 'arm', 'sol', 'lim', 'lib', 'gal'],
+    PINTADO: ['hab', 'arm', 'sol', 'lim', 'lib', 'are', 'pin']
+};
+
+function processSequenceForRow(row) {
+    const routeCode = String(row.dataset.rutaCodigo || '').toUpperCase();
+    return PROCESS_SEQUENCES[routeCode]
+        || procesosProd.filter(key => key !== 'des' && activeProcs[key]);
+}
+
+function paintProcessCell(row, procKey, value, maxCant) {
+    const percentageCell = row.querySelector(`.pct-${procKey}`);
+    if (!percentageCell) return;
+    if (value === null) {
+        percentageCell.innerText = '—';
+        percentageCell.className = `px-1 py-1 text-center w-[45px] font-medium text-slate-300 bg-white border-r border-slate-200 pct-${procKey} col-${procKey}`;
+        return;
+    }
+    const percentage = maxCant > 0 ? (value / maxCant) * 100 : 0;
+    percentageCell.innerText = `${percentage.toFixed(1)}%`;
+    if (percentage >= 100) {
+        percentageCell.className = `px-1 py-1 text-center w-[45px] font-black text-emerald-600 bg-emerald-50 border-r border-slate-200 pct-${procKey} col-${procKey}`;
+    } else if (percentage > 0) {
+        percentageCell.className = `px-1 py-1 text-center w-[45px] font-bold text-blue-600 bg-blue-50/50 border-r border-slate-200 pct-${procKey} col-${procKey}`;
+    } else {
+        percentageCell.className = `px-1 py-1 text-center w-[45px] font-medium text-slate-400 bg-white border-r border-slate-200 pct-${procKey} col-${procKey}`;
+    }
+}
+
 function validarYCalcular(input, maxCant, procKey, skipSave = false, skipRecalculate = false) {
     if (!canEdit && !skipSave) return;
-
     const row = input.closest('tr');
     if (!row) return;
 
+    const previousValue = input.dataset.lastValidValue ?? '';
     const valueText = input.value.trim();
-    if (valueText === '') {
-        const percentageCell = row.querySelector(`.pct-${procKey}`);
-        if (percentageCell) percentageCell.innerText = '-';
-        if (!skipRecalculate) recalcularMatriz();
-        return;
+    let value = valueText === '' ? null : Number.parseInt(valueText, 10);
+    if (value !== null && !Number.isFinite(value)) value = 0;
+    if (value !== null) value = Math.max(0, Math.min(value, maxCant));
+
+    if (procKey !== 'des' && value !== null && value > 0) {
+        const sequence = processSequenceForRow(row);
+        const position = sequence.indexOf(procKey);
+        if (position >= 0) {
+            const blockingStep = sequence.slice(position + 1).find(key => {
+                const laterValue = optionalProgressNumber(row.querySelector(`.proc-${key}`)?.value);
+                return laterValue !== null && laterValue > value;
+            });
+            if (blockingStep) {
+                input.value = previousValue;
+                mostrarAlerta(
+                    `No se puede bajar este proceso: ${blockingStep.toUpperCase()} ya registra un avance mayor.`,
+                    'error'
+                );
+                return;
+            }
+
+            const adjustedNames = [];
+            sequence.slice(0, position).forEach(key => {
+                const previousInput = row.querySelector(`.proc-${key}`);
+                const previousProgress = optionalProgressNumber(previousInput?.value);
+                if (previousInput && previousProgress !== null && previousProgress > 0 && previousProgress < value) {
+                    previousInput.value = value;
+                    previousInput.dataset.lastValidValue = String(value);
+                    paintProcessCell(row, key, value, maxCant);
+                    adjustedNames.push(key.toUpperCase());
+                }
+            });
+            if (adjustedNames.length && !skipSave) {
+                mostrarAlerta(
+                    `Se ajustó ${adjustedNames.join(', ')} a ${value} para mantener la secuencia.`,
+                    'info'
+                );
+            }
+        }
     }
 
-    let value = Number.parseFloat(valueText);
-    if (!Number.isFinite(value)) value = 0;
-    if (value > maxCant) value = maxCant;
+    input.value = value === null ? '' : String(value);
+    input.dataset.lastValidValue = input.value;
 
     if (procKey === 'des') {
-        if (value < 0) value = 0;
-        input.value = value;
+        value = value ?? 0;
+        input.value = String(value);
         const dateCell = row.querySelector('.pct-des');
-
         if (dateCell) {
             if (value > 0) {
-                const completionDate = row.dataset.fechaRealizacion || '';
+                const completionDate = row.dataset.fechaTerminoReal || '';
                 const date = completionDate
-                    ? new Date(`${completionDate}T00:00:00`).toLocaleDateString('es-PE', {
-                        day: '2-digit',
-                        month: 'short'
-                    }).toUpperCase()
+                    ? new Date(`${completionDate}T00:00:00`).toLocaleDateString('es-PE', {day: '2-digit', month: 'short'}).toUpperCase()
                     : 'SIN FECHA';
                 dateCell.innerHTML = `<span class="font-black ${completionDate ? 'text-slate-800' : 'text-slate-400'}">${date}</span>`;
                 dateCell.className = 'px-1 py-1.5 text-center bg-slate-200 border-l border-slate-300 sticky-r2 pct-des';
@@ -1676,49 +2330,11 @@ function validarYCalcular(input, maxCant, procKey, skipSave = false, skipRecalcu
             }
         }
     } else {
-        if (value < -1) value = -1;
-        input.value = value;
-        const percentageCell = row.querySelector(`.pct-${procKey}`);
-
-        if (value === -1) {
-            if (percentageCell) {
-                percentageCell.innerText = 'N/A';
-                percentageCell.className = `px-1 py-1 text-center w-[45px] font-bold text-slate-400 bg-slate-100 border-r border-slate-200 pct-${procKey} col-${procKey}`;
-            }
-            input.classList.add('is-not-applicable');
-            if (!input.parentElement.querySelector('.production-process-na-label')) {
-                input.insertAdjacentHTML('afterend', '<span class="production-process-na-label" aria-hidden="true">N/A</span>');
-            }
-            const programmedCell = input.parentElement.previousElementSibling;
-            if (programmedCell) programmedCell.innerText = '-';
-        } else {
-            input.classList.remove('is-not-applicable');
-            input.parentElement.querySelector('.production-process-na-label')?.remove();
-            const programmedCell = input.parentElement.previousElementSibling;
-            if (programmedCell) programmedCell.innerText = maxCant;
-
-            const localPercentage = maxCant > 0
-                ? (value / maxCant) * 100
-                : 0;
-            if (percentageCell) {
-                percentageCell.innerText = localPercentage.toFixed(1) + '%';
-                if (localPercentage === 100) {
-                    percentageCell.className = `px-1 py-1 text-center w-[45px] font-black text-emerald-600 bg-emerald-50 border-r border-slate-200 pct-${procKey} col-${procKey}`;
-                } else if (localPercentage > 0) {
-                    percentageCell.className = `px-1 py-1 text-center w-[45px] font-bold text-blue-600 bg-blue-50/50 border-r border-slate-200 pct-${procKey} col-${procKey}`;
-                } else {
-                    percentageCell.className = `px-1 py-1 text-center w-[45px] font-medium text-slate-400 bg-white border-r border-slate-200 pct-${procKey} col-${procKey}`;
-                }
-            }
-        }
+        paintProcessCell(row, procKey, value, maxCant);
     }
 
     if (!skipSave && row.dataset.id) {
-        programarGuardadoCelda(
-            row.dataset.id,
-            procKey + '_real',
-            value
-        );
+        programarGuardadoCelda(row.dataset.id, `${procKey}_real`, value);
     }
     if (!skipRecalculate) recalcularMatriz();
 }
@@ -1751,13 +2367,13 @@ async function toggleAlertaFila(button) {
 
 function recalcularMatriz() {
     const filas = document.querySelectorAll('#matriz-body tr[data-cant]');
-    if(filas.length === 0) return;
 
     let sumasProcesos = { hab: 0, arm: 0, sol: 0, lim: 0, lib: 0, gal: 0, are: 0, pin: 0 };
     let conteoFilasValidas = { hab: 0, arm: 0, sol: 0, lim: 0, lib: 0, gal: 0, are: 0, pin: 0 };
 
-    let sumaAvancesTotales = 0; let unidadesFab = 0;
+    let sumaAvancesTotales = 0; let pesoFab = 0;
     let sumaAvancesABA = 0; let unidadesABA = 0;
+    let alertCount = 0;
 
     filas.forEach(fila => {
         const tipoRow = fila.dataset.tipo;
@@ -1781,6 +2397,7 @@ function recalcularMatriz() {
 
         } else {
             let avanceFilaPonderado = 0; let pesoFilaTotal = 0;
+            const pesoFisico = Math.max(parseFloat(fila.dataset.pesoTotalKg) || 0, 0);
             procesosProd.forEach(key => {
                 if(key === 'des') return; if(!activeProcs[key]) return;
                 const input = fila.querySelector(`.proc-${key}`); if (!input) return;
@@ -1788,21 +2405,23 @@ function recalcularMatriz() {
                 const valNum = parseFloat(valStr);
 
                 if(!isNaN(valNum) && valNum !== -1) {
-                    const porc = valNum / cantT;
+                    const porc = cantT > 0 ? valNum / cantT : 0;
                     avanceFilaPonderado += (porc * pesos[key]);
                     pesoFilaTotal += pesos[key];
-                    if (cantT > 0) {
-                        sumasProcesos[key] += porc * cantT;
-                        conteoFilasValidas[key] += cantT;
+                    if (pesoFisico > 0) {
+                        sumasProcesos[key] += porc * pesoFisico;
+                        conteoFilasValidas[key] += pesoFisico;
                     }
                 }
             });
             porcFilaFinal = pesoFilaTotal > 0 ? (avanceFilaPonderado / pesoFilaTotal) * 100 : 0;
-            if (cantT > 0) {
-                sumaAvancesTotales += porcFilaFinal * cantT;
-                unidadesFab += cantT;
+            if (pesoFisico > 0) {
+                sumaAvancesTotales += porcFilaFinal * pesoFisico;
+                pesoFab += pesoFisico;
             }
         }
+
+        if (fila.classList.contains('row-alert')) alertCount += 1;
 
         const tdTotal = fila.querySelector('.row-total-percentage');
         if (tdTotal) {
@@ -1814,15 +2433,56 @@ function recalcularMatriz() {
     });
 
     const elGlobal = document.getElementById('global-avance-total');
-    if (elGlobal) elGlobal.innerText = `${(unidadesFab > 0 ? (sumaAvancesTotales / unidadesFab) : 0).toFixed(1)}%`;
+    const globalProgress = pesoFab > 0 ? (sumaAvancesTotales / pesoFab) : 0;
+    const advancedWeight = pesoFab * globalProgress / 100;
+    if (elGlobal) elGlobal.innerText = `${globalProgress.toFixed(1)}%`;
+    const advancedWeightElement = document.getElementById('global-peso-avanzado');
+    if (advancedWeightElement) advancedWeightElement.innerText = formatearPesoKg(advancedWeight);
+    const summaryProgress = document.getElementById('production-summary-progress');
+    const summaryProgressBar = document.getElementById('production-summary-progress-bar');
+    const summaryAdvancedWeight = document.getElementById('production-summary-advanced-weight');
+    if (summaryProgress) summaryProgress.innerText = `${globalProgress.toFixed(1)}%`;
+    if (summaryProgressBar) summaryProgressBar.style.width = `${Math.max(0, Math.min(globalProgress, 100))}%`;
+    if (summaryAdvancedWeight) summaryAdvancedWeight.innerText = formatearPesoKg(advancedWeight);
 
     const elABA = document.getElementById('global-avance-aba');
     if (elABA) elABA.innerText = `${(unidadesABA > 0 ? (sumaAvancesABA / unidadesABA) : 0).toFixed(1)}%`;
 
     procesosProd.forEach(p => {
         if(p === 'des') return; const el = document.getElementById(`box-${p}`);
-        if (el) { const promedio = conteoFilasValidas[p] > 0 ? (sumasProcesos[p] / conteoFilasValidas[p]) * 100 : 0; el.innerText = `${promedio.toFixed(1)}%`; }
+        const promedio = conteoFilasValidas[p] > 0 ? (sumasProcesos[p] / conteoFilasValidas[p]) * 100 : 0;
+        if (el) el.innerText = `${promedio.toFixed(1)}%`;
+        const insight = document.querySelector(`[data-insight-process="${p}"]`);
+        if (insight) {
+            const value = insight.querySelector('strong');
+            const bar = insight.querySelector('b');
+            if (value) value.innerText = `${promedio.toFixed(1)}%`;
+            if (bar) bar.style.width = `${Math.max(0, Math.min(promedio, 100))}%`;
+            insight.hidden = activeProcs[p] === false;
+        }
     });
+
+    const alertCounter = document.getElementById('production-alert-count');
+    const alertsContainer = document.getElementById('production-insight-alerts');
+    if (alertCounter) alertCounter.textContent = `${alertCount} ${alertCount === 1 ? 'activa' : 'activas'}`;
+    if (alertsContainer) {
+        alertsContainer.innerHTML = alertCount
+            ? `<p class="is-warning"><span class="material-symbols-rounded">warning</span>${alertCount} ${alertCount === 1 ? 'elemento requiere' : 'elementos requieren'} revisión.</p>`
+            : '<p><span class="material-symbols-rounded">task_alt</span>Sin inconsistencias visibles en el lote.</p>';
+    }
+}
+
+function filtrarSoloFaltantes() {
+    const rows = Array.from(document.querySelectorAll('#matriz-body tr[data-cant]'));
+    const showingOnlyPending = document.body.classList.toggle('production-only-pending');
+    rows.forEach((row) => {
+        const progress = Number.parseFloat(row.dataset.porcentaje || '0');
+        row.style.display = showingOnlyPending && progress >= 100 ? 'none' : '';
+    });
+    mostrarAlerta(
+        showingOnlyPending ? 'Mostrando únicamente elementos pendientes.' : 'Mostrando todos los elementos.',
+        'info'
+    );
 }
 
 
@@ -1837,11 +2497,15 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
     document.getElementById('det-desc').innerText = desc;
     document.getElementById('det-long').innerText = long + ' mm';
     document.getElementById('det-cant').innerText = cant;
-    const completionDateInput = document.getElementById('det-fecha-realizacion');
-    if (completionDateInput) {
-        const completionDate = currentDetalleRow.dataset.fechaRealizacion || '';
-        completionDateInput.value = completionDate;
-        completionDateInput.dataset.previous = completionDate;
+    const startDateInput = document.getElementById('det-fecha-inicio-real');
+    const endDateInput = document.getElementById('det-fecha-termino-real');
+    if (startDateInput) {
+        startDateInput.value = currentDetalleRow.dataset.fechaInicioReal || '';
+        startDateInput.dataset.previous = startDateInput.value;
+    }
+    if (endDateInput) {
+        endDateInput.value = currentDetalleRow.dataset.fechaTerminoReal || '';
+        endDateInput.dataset.previous = endDateInput.value;
     }
 
     // Obtenemos los operarios
@@ -1895,24 +2559,18 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
             if (p === 'des' || !activeProcs[p]) return;
             const input = currentDetalleRow.querySelector(`.proc-${p}`);
             if (input) {
-                const val = parseFloat(input.value) || 0;
-                const isNA = val === -1;
+                const registeredValue = optionalProgressNumber(input.value);
+                const val = registeredValue ?? 0;
+                const isUnregistered = registeredValue === null;
 
-                let txtEstado = 'Pendiente';
+                let txtEstado = isUnregistered ? 'Sin registrar' : 'Pendiente';
                 let statusClass = '';
-                if(isNA) { txtEstado = 'No aplica'; }
-                else if(val >= cant && cant > 0) { txtEstado = 'Completado'; statusClass = 'is-complete'; }
+                if(val >= cant && cant > 0) { txtEstado = 'Completado'; statusClass = 'is-complete'; }
                 else if(val > 0) { txtEstado = 'En proceso'; statusClass = 'is-progress'; }
 
-                const porcentajeLocal = isNA ? 'N/A' : (cant > 0 ? ((val / cant) * 100).toFixed(1) : '0.0') + '%';
+                const porcentajeLocal = isUnregistered ? '—' : (cant > 0 ? ((val / cant) * 100).toFixed(1) : '0.0') + '%';
                 const operatorName = opDict[p] || '';
                 const processControls = canEdit ? `
-                        <label class="production-detail-apply-toggle">
-                            <input type="checkbox" ${!isNA ? 'checked' : ''} onchange="toggleNA('${p}', !this.checked, ${cant})">
-                            <span aria-hidden="true"></span>
-                            <b>Aplica al elemento</b>
-                        </label>
-                        ${!isNA ? `
                         <div class="production-detail-operator">
                             <span>Personal asignado</span>
                             <button type="button" onclick="abrirSelectorPersonal('${p}')" class="production-detail-personnel-trigger">
@@ -1920,23 +2578,20 @@ function abrirDetalle(btnEl, marca, long, cant, desc, tipo) {
                                 <span class="material-symbols-rounded" aria-hidden="true">expand_more</span>
                             </button>
                             <small>${operatorName ? 'Selecciona nuevamente para cambiar la asignación.' : 'Elige una persona registrada.'}</small>
-                        </div>
-                        ` : `
-                        <div class="production-detail-readonly"><span>Asignación</span><strong>Proceso omitido</strong></div>
-                        `}`
+                        </div>`
                     : `<div class="production-detail-readonly"><span>Operario</span>
-                        <strong>${isNA ? 'No aplica' : (operatorName ? escapeHtml(operatorName) : 'Sin operarios asignados')}</strong>
+                        <strong>${operatorName ? escapeHtml(operatorName) : 'Sin operarios asignados'}</strong>
                     </div>`;
 
                 processRows.push(`<tr>
                     <td>${nombresProcObj[p]}</td>
                     <td><span class="production-detail-process-status ${statusClass}"><i></i>${txtEstado}</span></td>
-                    <td>${isNA ? '-' : cant}</td>
-                    <td>${isNA ? '-' : val}</td>
+                    <td>${cant}</td>
+                    <td>${isUnregistered ? '—' : val}</td>
                     <td>${porcentajeLocal}</td>
                 </tr>`);
 
-                assignmentCards.push(`<article class="production-detail-assignment ${isNA ? 'is-disabled' : ''}">
+                assignmentCards.push(`<article class="production-detail-assignment">
                     <div class="production-detail-assignment-heading">
                         <strong>${nombresProcObj[p]}</strong>
                         <span>${txtEstado} · ${porcentajeLocal}</span>
@@ -1982,22 +2637,34 @@ function cerrarDetalle() {
     }
 }
 
-async function guardarFechaElemento(input) {
+async function guardarPeriodoElemento(input, fieldName) {
     if (!canEdit || !input || !currentDetalleRow?.dataset.id) return;
     const elementRow = currentDetalleRow;
     const previousValue = input.dataset.previous || '';
     const nextValue = input.value || null;
+    const startValue = fieldName === 'fecha_inicio_real'
+        ? nextValue
+        : (elementRow.dataset.fechaInicioReal || null);
+    const endValue = fieldName === 'fecha_termino_real'
+        ? nextValue
+        : (elementRow.dataset.fechaTerminoReal || null);
+    if (startValue && endValue && endValue < startValue) {
+        input.value = previousValue;
+        mostrarAlerta('La fecha de término no puede ser anterior al inicio.', 'error');
+        return;
+    }
     input.disabled = true;
 
     const saved = await encolarGuardadoComponente(
         elementRow.dataset.id,
-        'fecha_realizacion',
+        fieldName,
         nextValue,
     );
 
     if (saved) {
         const storedValue = nextValue || '';
-        elementRow.dataset.fechaRealizacion = storedValue;
+        if (fieldName === 'fecha_inicio_real') elementRow.dataset.fechaInicioReal = storedValue;
+        if (fieldName === 'fecha_termino_real') elementRow.dataset.fechaTerminoReal = storedValue;
         input.dataset.previous = storedValue;
         const dispatchInput = elementRow.querySelector('.proc-des');
         if (dispatchInput && Number(dispatchInput.value) > 0) {
@@ -2010,7 +2677,7 @@ async function guardarFechaElemento(input) {
             );
         }
         mostrarAlerta(
-            storedValue ? 'Fecha del elemento guardada.' : 'Fecha del elemento eliminada.',
+            storedValue ? 'Período del elemento actualizado.' : 'Fecha del elemento eliminada.',
             'exito',
         );
     } else {
@@ -2020,18 +2687,6 @@ async function guardarFechaElemento(input) {
     input.disabled = !canEdit;
 }
 
-
-function toggleNA(proc, isChecked, cant) {
-    if (!canEdit) return;
-    if(!currentDetalleRow) return;
-    const input = currentDetalleRow.querySelector(`.proc-${proc}`);
-    if(input) {
-        input.value = isChecked ? -1 : 0;
-        validarYCalcular(input, cant, proc, false);
-        // Recargar Modal
-        abrirDetalle(currentDetalleRow.querySelector('.btn-detalle'), document.getElementById('det-marca').innerText, document.getElementById('det-long').innerText.replace(' mm',''), cant, document.getElementById('det-desc').innerText, currentDetalleRow.dataset.tipo);
-    }
-}
 
 async function guardarOpProceso(proc, nombre) {
     if (!canEdit || !currentDetalleRow) return false;
@@ -2069,7 +2724,45 @@ async function guardarOpProceso(proc, nombre) {
 
 function configurarNavegacionSegura() {
     const trackingLink = document.querySelector('[data-wait-for-production-saves]');
-    if (!trackingLink || !canEdit) return;
+    if (!canEdit) return;
+
+    window.addEventListener('beforeunload', (event) => {
+        if (allowConfirmedNavigation || !hasUnsavedProductionChanges()) return;
+        event.preventDefault();
+        event.returnValue = '';
+    });
+
+    document.addEventListener('click', (event) => {
+        const link = event.target.closest('a[href]');
+        if (
+            !link
+            || !hasUnsavedProductionChanges()
+            || event.defaultPrevented
+            || event.button !== 0
+            || event.ctrlKey
+            || event.metaKey
+            || event.shiftKey
+            || event.altKey
+            || link.target === '_blank'
+            || link.hasAttribute('download')
+        ) return;
+        const destination = new URL(link.href, window.location.href);
+        if (destination.href === window.location.href || destination.protocol === 'javascript:') return;
+
+        const confirmed = window.confirm(
+            hasPendingImport
+                ? 'El Excel cargado todavía no fue guardado. Si sales, perderás estos datos.\n\n¿Deseas salir de todos modos?'
+                : 'Todavía hay avances guardándose. Si sales ahora, el último cambio podría perderse.\n\n¿Deseas salir de todos modos?'
+        );
+        if (!confirmed) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
+        allowConfirmedNavigation = true;
+    }, true);
+
+    if (!trackingLink) return;
 
     trackingLink.addEventListener('click', async (event) => {
         if (

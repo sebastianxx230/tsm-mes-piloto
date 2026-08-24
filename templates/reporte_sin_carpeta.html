@@ -5,22 +5,7 @@
 
 {% block content %}
 <div class="tsm-page mx-auto max-w-[1500px] font-sans">
-    <div class="tsm-page-header mb-4 flex-col items-start md:flex-row md:items-center" style="border-left-color:#dc2626;">
-        <div class="flex min-w-0 items-center gap-4">
-            <div class="tsm-page-icon border-red-100 bg-red-50 text-red-600">
-                <span class="material-symbols-rounded text-[24px]">folder_off</span>
-            </div>
-            <div class="min-w-0">
-                <p class="tsm-kicker mb-1">Evidencia y documentación</p>
-                <h1 class="tsm-page-title">Carpeta de fotografías no disponible</h1>
-                <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
-                    <span class="rounded-[4px] border border-blue-100 bg-blue-50 px-2 py-0.5 font-bold text-blue-700">OT {{ ot.ot }}</span>
-                    <span>{{ ot.cliente }}</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="flex flex-wrap gap-2">
+    <div class="tsm-compact-actions">
             <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}" class="tsm-button tsm-button-secondary">
                 <span class="material-symbols-rounded text-[17px]">arrow_back</span>
                 Catálogo
@@ -29,7 +14,6 @@
                 <span class="material-symbols-rounded text-[17px]">refresh</span>
                 Reintentar
             </a>
-        </div>
     </div>
 
     <section class="tsm-panel">

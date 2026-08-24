@@ -23,7 +23,7 @@ from db_config import db
 from models.catalogo_ot import CatalogoOT
 from models.documento_seguimiento import DocumentoSeguimiento
 from models.produccion import BitacoraOT
-from utils.auth import roles_required
+from utils.auth import permission_required
 from utils.tracking_schema import (
     TrackingSchemaError,
     ensure_tracking_storage_schema,
@@ -356,7 +356,7 @@ def listar_documentos(ot_id):
     '/api/seguimiento/<int:ot_id>/documentos/<category>/candidatos'
 )
 @login_required
-@roles_required('admin')
+@permission_required('documents.upload')
 def listar_candidatos(ot_id, category):
     try:
         config = _category_config(category)
@@ -404,7 +404,7 @@ def listar_candidatos(ot_id, category):
     '/api/seguimiento/<int:ot_id>/documentos/<category>/subir'
 )
 @login_required
-@roles_required('admin')
+@permission_required('documents.publish')
 def subir_documento(ot_id, category):
     try:
         config = _category_config(category)
@@ -503,7 +503,7 @@ def subir_documento(ot_id, category):
     '/api/seguimiento/<int:ot_id>/documentos/<category>'
 )
 @login_required
-@roles_required('admin')
+@permission_required('documents.publish')
 def guardar_documento(ot_id, category):
     try:
         config = _category_config(category)

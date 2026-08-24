@@ -1,6 +1,7 @@
 import os
 import re
 from datetime import timedelta
+from pathlib import Path
 from flask import Flask, jsonify, redirect, request, url_for
 from whitenoise import WhiteNoise
 from dotenv import load_dotenv
@@ -16,7 +17,16 @@ from sqlalchemy.pool import NullPool
 from utils.logging_config import configure_structured_logging
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parent
+_runtime_environment = os.environ.get('APP_ENV', '').strip().lower()
+_is_vercel_runtime = bool(os.environ.get('VERCEL'))
+
+# Keep committed/default configuration separate from machine-local secrets.
+# `.env.local` has the highest priority only during local execution so stale
+# variables configured by an IDE cannot silently replace the intended values.
+load_dotenv(PROJECT_ROOT / '.env')
+if not _is_vercel_runtime and _runtime_environment != 'test':
+    load_dotenv(PROJECT_ROOT / '.env.local', override=True)
 
 
 def _normalize_database_url(raw_value):
@@ -38,11 +48,21 @@ def _normalize_database_url(raw_value):
         value = value.replace('postgres://', 'postgresql://', 1)
 
     try:
-        make_url(value)
+        parsed_url = make_url(value)
     except ArgumentError as exc:
         raise ValueError(
             'DATABASE_URL tiene un formato invalido; pegue solo la connection string.'
         ) from exc
+
+    placeholder_hosts = {'host', 'host-pooler', 'hostname', 'localhost.example'}
+    if (
+        parsed_url.drivername.startswith('postgres')
+        and (parsed_url.host or '').lower() in placeholder_hosts
+    ):
+        raise ValueError(
+            'DATABASE_URL contiene valores de ejemplo. '
+            'Configura la conexión real en .env.local.'
+        )
 
     return value
 
@@ -225,6 +245,7 @@ from controllers.login_controller import login_bp
 from controllers.produccion_controller import produccion_bp
 from controllers.admin_controller import admin_bp
 from controllers.documentos_seguimiento_controller import documentos_seguimiento_bp
+from controllers.mes_controller import mes_bp
 
 app.register_blueprint(login_bp)
 app.register_blueprint(gestion_ot_bp)
@@ -233,6 +254,7 @@ app.register_blueprint(perfil_bp)
 app.register_blueprint(produccion_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(documentos_seguimiento_bp)
+app.register_blueprint(mes_bp)
 
 
 def _database_unavailable_reason():

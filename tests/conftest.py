@@ -25,6 +25,7 @@ from extensions import limiter
 from models.catalogo_ot import CatalogoOT
 from models.produccion import ComponenteOT, PackingList
 from models.usuario import Usuario
+from utils.production_schema import reset_production_schema_state
 
 
 @pytest.fixture()
@@ -37,6 +38,7 @@ def app():
     limiter.reset()
 
     with flask_app.app_context():
+        reset_production_schema_state()
         db.drop_all()
         db.create_all()
 
@@ -87,6 +89,7 @@ def app():
     with flask_app.app_context():
         db.session.remove()
         db.drop_all()
+        reset_production_schema_state()
     limiter.reset()
 
 

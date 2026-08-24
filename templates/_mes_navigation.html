@@ -1,0 +1,41 @@
+{% set path = request.path %}
+{% set selected = active_module|default(
+    'dashboard' if path in ['/dashboard', '/mes', '/mes/dashboard'] else
+    'almacen' if path in ['/almacen', '/mes/almacen'] else
+    'planeamiento' if path.endswith('/planeamiento') else
+    'calidad' if path.endswith('/calidad') else
+    'logistica' if path.endswith('/logistica') else
+    'comercial' if path.endswith('/comercial') else
+    'reportes' if path.endswith('/reportes') else
+    'produccion' if path == '/catalogo-ot' or path.startswith('/produccion/') or path.startswith('/seguimiento/') or path.startswith('/reporte/') else
+    ''
+) %}
+<nav class="mes-module-nav" aria-label="Módulos del sistema">
+    <div class="mes-module-nav-inner">
+        <a class="mes-module-link {{ 'is-active' if selected == 'dashboard' else '' }}"
+           href="{{ url_for('mes_bp.dashboard') }}">
+            <span>Dashboard</span>
+        </a>
+        <a class="mes-module-link {{ 'is-active' if selected == 'produccion' else '' }}"
+           href="{{ url_for('gestion_ot_bp.catalogo_ot') }}">
+            <span>Producción</span>
+        </a>
+        <a class="mes-module-link {{ 'is-active' if selected == 'almacen' else '' }}"
+           href="{{ url_for('mes_bp.almacen') }}">
+            <span>Almacén</span>
+        </a>
+        {% for key, label, icon in [
+            ('planeamiento', 'Planeamiento', 'calendar_month'),
+            ('calidad', 'Calidad', 'verified_user'),
+            ('logistica', 'Logística', 'local_shipping'),
+            ('comercial', 'Comercial', 'groups'),
+            ('reportes', 'Reportes', 'bar_chart')
+        ] %}
+        <a class="mes-module-link is-upcoming {{ 'is-active' if selected == key else '' }}"
+           href="{{ url_for('mes_bp.upcoming_module', module_key=key) }}">
+            <span>{{ label }}</span>
+            <small>Próximamente</small>
+        </a>
+        {% endfor %}
+    </div>
+</nav>

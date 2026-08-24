@@ -18,14 +18,20 @@ def _mock_drive_gallery(monkeypatch):
     )
 
 
-def test_only_admin_can_publish_tracking_photos(client, login, ids):
+def test_tracking_photo_publication_uses_functional_permissions(
+    client,
+    login,
+    ids,
+    monkeypatch,
+):
     payload = {'photos': [{'id': 'drive-photo-1'}]}
 
     login('viewer')
     assert client.put(f"/api/seguimiento/{ids['ot']}/fotos", json=payload).status_code == 403
 
+    _mock_drive_gallery(monkeypatch)
     login('editor')
-    assert client.put(f"/api/seguimiento/{ids['ot']}/fotos", json=payload).status_code == 403
+    assert client.put(f"/api/seguimiento/{ids['ot']}/fotos", json=payload).status_code == 200
 
 
 def test_admin_publishes_ordered_drive_photos(

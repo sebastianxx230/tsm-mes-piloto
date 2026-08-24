@@ -2,20 +2,26 @@ import os
 import re
 import unicodedata
 from datetime import date
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from db_config import db
 from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from utils.auth import roles_required
+from utils.auth import permission_required
 
 from models.catalogo_ot import CatalogoOT
 from models.produccion import (
+    AvanceElementoProceso,
     BitacoraOT,
     ComponenteOT,
+    ImportacionPackingList,
     PackingList,
     PersonalProduccion,
+    ProcesoProduccion,
+    RutaProceso,
+    RutaProduccion,
     utc_now,
 )
 from utils.production_schema import ensure_production_storage_schema
@@ -37,6 +43,19 @@ EDITABLE_COMPONENT_FIELDS = {
     'estado_suministro',
     'operario',
     'fecha_realizacion',
+    'fecha_inicio_real',
+    'fecha_termino_real',
+    'categoria',
+    'subcategoria',
+    'unidad',
+    'ubicacion',
+    'perfil',
+    'material',
+    'longitud_mm',
+    'area_unitaria_m2',
+    'area_total_m2',
+    'peso_unitario_kg',
+    'peso_total_kg',
     'hab_real',
     'arm_real',
     'sol_real',
@@ -70,6 +89,19 @@ AUDIT_FIELD_LABELS = {
     'estado_suministro': 'estado de suministro',
     'operario': 'personal asignado',
     'fecha_realizacion': 'fecha de fabricación',
+    'fecha_inicio_real': 'fecha de inicio del elemento',
+    'fecha_termino_real': 'fecha de término del elemento',
+    'categoria': 'categoría',
+    'subcategoria': 'subcategoría',
+    'unidad': 'unidad',
+    'ubicacion': 'ubicación',
+    'perfil': 'perfil',
+    'material': 'material',
+    'longitud_mm': 'longitud técnica',
+    'area_unitaria_m2': 'área unitaria',
+    'area_total_m2': 'área total',
+    'peso_unitario_kg': 'peso unitario',
+    'peso_total_kg': 'peso total',
     'hab_real': 'avance habilitado',
     'arm_real': 'avance armado',
     'sol_real': 'avance soldado',
@@ -90,6 +122,47 @@ ALLOWED_COMPONENT_TYPES = {
     'c_vida',
     'vientos',
     'suministro',
+    'perneria',
+    'otro',
+}
+
+ALLOWED_ITEM_CATEGORIES = {
+    'FABRICACION',
+    'PERNERIA',
+    'SUMINISTRO',
+    'OTRO',
+}
+
+LEGACY_PROCESS_FIELDS = {
+    'hab': 'hab_real',
+    'arm': 'arm_real',
+    'sol': 'sol_real',
+    'lim': 'lim_real',
+    'lib': 'lib_real',
+    'gal': 'gal_real',
+    'are': 'are_real',
+    'pin': 'pin_real',
+    'des': 'des_real',
+}
+
+PROCESS_NAMES = {
+    'hab': 'Habilitado',
+    'arm': 'Armado',
+    'sol': 'Soldadura',
+    'lim': 'Limpieza',
+    'lib': 'Liberación',
+    'gal': 'Galvanizado',
+    'are': 'Arenado',
+    'pin': 'Pintado',
+    'des': 'Despacho',
+}
+
+DECIMAL_ITEM_FIELDS = {
+    'longitud_mm': (14, 3),
+    'area_unitaria_m2': (14, 4),
+    'area_total_m2': (14, 4),
+    'peso_unitario_kg': (14, 4),
+    'peso_total_kg': (14, 4),
 }
 
 ALLOWED_SUPPLY_STATES = {
@@ -162,6 +235,148 @@ def _coerce_optional_int(value, field_name, minimum=0, maximum=1_000_000):
         minimum=minimum,
         maximum=maximum,
     )
+
+
+def _coerce_optional_decimal(
+        value,
+        field_name,
+        precision=14,
+        scale=4,
+        minimum=Decimal('0'),
+):
+    if value is None or value == '':
+        return None
+    if isinstance(value, bool):
+        raise ValidationError(f'El campo {field_name} debe ser numérico.')
+    try:
+        parsed = Decimal(str(value).strip())
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValidationError(
+            f'El campo {field_name} debe ser numérico.'
+        ) from None
+    if not parsed.is_finite() or parsed < minimum:
+        raise ValidationError(
+            f'El campo {field_name} debe ser mayor o igual a {minimum}.'
+        )
+    maximum = (Decimal(10) ** (precision - scale)) - (
+        Decimal(10) ** -scale
+    )
+    if parsed > maximum:
+        raise ValidationError(
+            f'El campo {field_name} supera el máximo permitido.'
+        )
+    quantum = Decimal(1).scaleb(-scale)
+    return parsed.quantize(quantum, rounding=ROUND_HALF_UP)
+
+
+def _canonical_ot_code(value):
+    """Normaliza OT 26-098, 26-0098 y 2026-0098 al código oficial."""
+    raw = unicodedata.normalize('NFKC', str(value or '')).upper().strip()
+    if not raw:
+        return ''
+    match = re.search(
+        r'(?:\bOT\b|N[º°O.]?\s*O\.?\s*T\.?)?\s*'
+        r'(20\d{2}|\d{2})\s*[-_/]\s*(\d{1,4})\b',
+        raw,
+    )
+    if not match:
+        return raw
+    year = match.group(1)
+    if len(year) == 2:
+        year = f'20{year}'
+    return f'{year}-{int(match.group(2)):04d}'
+
+
+def _validate_import_ot(
+        work_order,
+        detected_codes,
+        source_file=None,
+        mismatch_confirmed=False,
+):
+    if detected_codes is None:
+        return []
+    if not isinstance(detected_codes, list):
+        raise ValidationError('Los códigos OT detectados no son válidos.')
+    canonical_codes = []
+    for raw_code in detected_codes[:20]:
+        code = _canonical_ot_code(raw_code)
+        if code and code not in canonical_codes:
+            canonical_codes.append(code)
+    expected = _canonical_ot_code(work_order.ot)
+    mismatches = [code for code in canonical_codes if code != expected]
+    if mismatches:
+        file_code = _canonical_ot_code(source_file)
+        can_accept_stale_header = (
+            mismatch_confirmed
+            and file_code == expected
+            and len(canonical_codes) == 1
+        )
+        if not can_accept_stale_header:
+            raise ValidationError(
+                'El Excel no corresponde a esta OT. Se esperaba '
+                f'{expected}, pero se detectó {", ".join(mismatches)}.'
+            )
+    return canonical_codes, bool(mismatches)
+
+
+def _classification(component_type, requested_category=None):
+    legacy_type = str(component_type or 'fabricacion').strip().lower()
+    requested = str(requested_category or '').strip().upper()
+    if requested:
+        if requested not in ALLOWED_ITEM_CATEGORIES:
+            raise ValidationError('La categoría del elemento no es válida.')
+        category = requested
+    elif legacy_type in {'fab', 'fabricacion'}:
+        category = 'FABRICACION'
+    elif legacy_type in {'p_template', 'p_torre', 'perneria'}:
+        category = 'PERNERIA'
+    elif legacy_type in {'c_vida', 'vientos', 'suministro'}:
+        category = 'SUMINISTRO'
+    else:
+        category = 'OTRO'
+
+    subtype = {
+        'p_template': 'TEMPLATE',
+        'p_torre': 'TORRE',
+        'c_vida': 'CABLE_DE_VIDA',
+        'vientos': 'SISTEMA_DE_VIENTOS',
+    }.get(legacy_type)
+    return category, subtype
+
+
+def _validated_import_metadata(data):
+    raw = data.get('import_meta') or {}
+    if not isinstance(raw, dict):
+        raise ValidationError('Los metadatos de importación no son válidos.')
+    warnings = raw.get('advertencias') or []
+    if not isinstance(warnings, list):
+        raise ValidationError('Las advertencias de importación no son válidas.')
+    mismatch_confirmed = raw.get('ot_diferencia_confirmada', False)
+    if not isinstance(mismatch_confirmed, bool):
+        raise ValidationError(
+            'La confirmación de diferencia de OT no es válida.'
+        )
+    return {
+        'schema_version': _coerce_optional_int(
+            raw.get('schema_version'),
+            'schema_version',
+            minimum=1,
+            maximum=10,
+        ) or 1,
+        'archivo': _coerce_text(raw.get('archivo'), 'archivo', 255),
+        'hoja': _coerce_text(raw.get('hoja'), 'hoja', 100),
+        'site': _coerce_text(raw.get('site'), 'site', 150),
+        'ruta_codigo': _coerce_text(
+            raw.get('ruta_codigo'), 'ruta_codigo', 40
+        ).upper(),
+        'ot_detectadas': raw.get('ot_detectadas') or [],
+        'ot_diferencia_confirmada': mismatch_confirmed,
+        'advertencias': [
+            _coerce_text(item, 'advertencia', 500)
+            for item in warnings[:50]
+            if str(item or '').strip()
+        ],
+    }
 
 
 def _coerce_text(value, field_name, maximum, required=False):
@@ -334,10 +549,42 @@ def _validate_component_value(component, field_name, value):
         return _coerce_text(value, field_name, 5000)
     if field_name == 'longitud':
         return _coerce_text(value, field_name, 50)
+    if field_name == 'categoria':
+        parsed = _coerce_text(value, field_name, 30, required=True).upper()
+        if parsed not in ALLOWED_ITEM_CATEGORIES:
+            raise ValidationError('La categoría del elemento no es válida.')
+        return parsed
+    if field_name == 'subcategoria':
+        return _coerce_text(value, field_name, 50).upper() or None
+    if field_name == 'unidad':
+        return _coerce_text(value, field_name, 20, required=True).upper()
+    if field_name == 'ubicacion':
+        return _coerce_text(value, field_name, 255)
+    if field_name == 'perfil':
+        return _coerce_text(value, field_name, 150)
+    if field_name == 'material':
+        return _coerce_text(value, field_name, 150)
+    if field_name in DECIMAL_ITEM_FIELDS:
+        precision, scale = DECIMAL_ITEM_FIELDS[field_name]
+        return _coerce_optional_decimal(
+            value,
+            field_name,
+            precision=precision,
+            scale=scale,
+        )
     if field_name == 'operario':
         return _canonicalize_personnel_assignments(value)
     if field_name == 'fecha_realizacion':
         return _coerce_optional_date(value, field_name)
+    if field_name in {'fecha_inicio_real', 'fecha_termino_real'}:
+        parsed = _coerce_optional_date(value, field_name)
+        start_date = parsed if field_name == 'fecha_inicio_real' else component.fecha_inicio_real
+        end_date = parsed if field_name == 'fecha_termino_real' else component.fecha_termino_real
+        if start_date and end_date and end_date < start_date:
+            raise ValidationError(
+                'La fecha de término del elemento no puede ser anterior al inicio.'
+            )
+        return parsed
     if field_name == 'cantidad':
         quantity = _coerce_int(value, field_name)
         current_progress = [
@@ -355,11 +602,12 @@ def _validate_component_value(component, field_name, value):
             )
         return quantity
     if field_name in PROCESS_FIELDS:
-        minimum = 0 if field_name == 'des_real' else -1
+        if field_name != 'des_real' and (value is None or value == ''):
+            return None
         return _coerce_int(
             value,
             field_name,
-            minimum=minimum,
+            minimum=0,
             maximum=max(component.cantidad or 0, 0),
         )
     if field_name == 'tipo':
@@ -394,6 +642,16 @@ def _validate_import_component(component):
     if component_type not in ALLOWED_COMPONENT_TYPES:
         raise ValidationError('El tipo de elemento no es válido.')
 
+    category, inferred_subcategory = _classification(
+        component_type,
+        component.get('categoria'),
+    )
+    subcategory = _coerce_text(
+        component.get('subcategoria') or inferred_subcategory,
+        'subcategoria',
+        50,
+    ).upper() or None
+
     supply_state = _coerce_text(
         component.get('estado_suministro', 'No requerido'),
         'estado_suministro',
@@ -405,13 +663,53 @@ def _validate_import_component(component):
 
     quantity = _coerce_int(component.get('cantidad', 0), 'cantidad')
 
+    decimals = {}
+    for field_name, (precision, scale) in DECIMAL_ITEM_FIELDS.items():
+        decimals[field_name] = _coerce_optional_decimal(
+            component.get(field_name),
+            field_name,
+            precision=precision,
+            scale=scale,
+        )
+    if decimals['longitud_mm'] is None:
+        raw_length = component.get('longitud')
+        try:
+            decimals['longitud_mm'] = _coerce_optional_decimal(
+                raw_length,
+                'longitud_mm',
+                precision=14,
+                scale=3,
+            )
+        except ValidationError:
+            decimals['longitud_mm'] = None
+
+    quantity_decimal = Decimal(quantity)
+    if (
+            decimals['area_total_m2'] is None
+            and decimals['area_unitaria_m2'] is not None
+    ):
+        decimals['area_total_m2'] = (
+            decimals['area_unitaria_m2'] * quantity_decimal
+        ).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+    if (
+            decimals['peso_total_kg'] is None
+            and decimals['peso_unitario_kg'] is not None
+    ):
+        decimals['peso_total_kg'] = (
+            decimals['peso_unitario_kg'] * quantity_decimal
+        ).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+
     def progress_value(source_name, target_name):
-        minimum = 0 if target_name == 'des_real' else -1
-        default = 0 if target_name == 'des_real' else -1
+        default = 0 if target_name == 'des_real' else None
+        raw_value = component.get(source_name, default)
+        if target_name != 'des_real' and (
+                raw_value is None or raw_value == '' or raw_value == -1
+        ):
+            return None
         return _coerce_int(
-            component.get(source_name, default),
+            raw_value,
             target_name,
-            minimum=minimum,
+            minimum=0,
             maximum=quantity,
         )
 
@@ -419,6 +717,20 @@ def _validate_import_component(component):
     if not isinstance(alert, bool):
         raise ValidationError(
             'El campo alerta debe ser verdadero o falso.'
+        )
+
+    element_start = _coerce_optional_date(
+        component.get('fecha_inicio_real'),
+        'fecha_inicio_real',
+    )
+    element_end = _coerce_optional_date(
+        component.get('fecha_termino_real')
+        or component.get('fecha_realizacion'),
+        'fecha_termino_real',
+    )
+    if element_start and element_end and element_end < element_start:
+        raise ValidationError(
+            'La fecha de término del elemento no puede ser anterior al inicio.'
         )
 
     return {
@@ -439,6 +751,33 @@ def _validate_import_component(component):
             'longitud',
             50,
         ),
+        'categoria': category,
+        'subcategoria': subcategory,
+        'unidad': _coerce_text(
+            component.get('unidad') or 'UND',
+            'unidad',
+            20,
+            required=True,
+        ).upper(),
+        'ubicacion': _coerce_text(
+            component.get('ubicacion'), 'ubicacion', 255
+        ),
+        'perfil': _coerce_text(component.get('perfil'), 'perfil', 150),
+        'material': _coerce_text(
+            component.get('material'), 'material', 150
+        ),
+        **decimals,
+        'fila_origen': _coerce_optional_int(
+            component.get('fila_origen'),
+            'fila_origen',
+            minimum=1,
+            maximum=1_000_000,
+        ),
+        'ruta_codigo': _coerce_text(
+            component.get('ruta_codigo'),
+            'ruta_codigo',
+            40,
+        ).upper() or None,
         'tipo': component_type,
         'estado_suministro': supply_state,
         'operario': _canonicalize_personnel_assignments(
@@ -448,6 +787,8 @@ def _validate_import_component(component):
             component.get('fecha_realizacion'),
             'fecha_realizacion',
         ),
+        'fecha_inicio_real': element_start,
+        'fecha_termino_real': element_end,
         'hab_real': progress_value('hab', 'hab_real'),
         'arm_real': progress_value('arm', 'arm_real'),
         'sol_real': progress_value('sol', 'sol_real'),
@@ -497,7 +838,7 @@ def listar_personal_produccion():
 
 @produccion_bp.post('/api/produccion/personal')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('production.personnel.assign')
 def crear_personal_produccion():
     try:
         data = _get_json_object()
@@ -568,7 +909,7 @@ def obtener_pls(ot_id):
 
 @produccion_bp.post('/api/produccion/packing_lists')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('production.edit')
 def crear_pl():
     try:
         data = _get_json_object()
@@ -652,7 +993,7 @@ def crear_pl():
 
 @produccion_bp.put('/api/produccion/packing_lists/<int:pl_id>')
 @login_required
-@roles_required('admin')
+@permission_required('production.edit')
 def renombrar_pl(pl_id):
     try:
         data = _get_json_object()
@@ -727,7 +1068,7 @@ def renombrar_pl(pl_id):
 
 @produccion_bp.put('/api/produccion/packing_lists/<int:pl_id>/periodo')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('production.edit')
 def actualizar_periodo_pl(pl_id):
     try:
         data = _get_json_object()
@@ -804,7 +1145,7 @@ def actualizar_periodo_pl(pl_id):
 
 @produccion_bp.post('/api/produccion/packing_lists/reordenar')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('production.edit')
 def reordenar_pls():
     try:
         data = _get_json_object()
@@ -866,7 +1207,7 @@ def reordenar_pls():
 
 @produccion_bp.delete('/api/produccion/packing_lists/<int:pl_id>')
 @login_required
-@roles_required('admin')
+@permission_required('production.edit')
 def eliminar_pl(pl_id):
     try:
         packing_list = db.session.get(
@@ -921,12 +1262,191 @@ def eliminar_pl(pl_id):
         }), 500
 
 
+@produccion_bp.get('/api/produccion/rutas')
+@login_required
+def listar_rutas_produccion():
+    routes = (
+        RutaProduccion.query.filter_by(activo=True)
+        .order_by(RutaProduccion.nombre.asc())
+        .all()
+    )
+    return jsonify({
+        'success': True,
+        'rutas': [route.to_dict(include_processes=True) for route in routes],
+    })
+
+
+def _route_steps(route):
+    if route is None:
+        return []
+    return (
+        RutaProceso.query.filter_by(ruta_id=route.id)
+        .order_by(RutaProceso.orden.asc())
+        .all()
+    )
+
+
+def _initialize_legacy_route_progress(component_data, route_steps):
+    """Mantiene la matriz V1 alineada durante la transición a procesos V2."""
+    applicable = {step.proceso.codigo for step in route_steps}
+    for process_code, field_name in LEGACY_PROCESS_FIELDS.items():
+        if process_code == 'des':
+            component_data[field_name] = max(
+                int(component_data.get(field_name) or 0),
+                0,
+            )
+        elif process_code in applicable:
+            raw_value = component_data.get(field_name)
+            component_data[field_name] = (
+                max(int(raw_value), 0)
+                if raw_value not in (None, '', -1)
+                else None
+            )
+        else:
+            component_data[field_name] = None
+
+    # Si varios procesos fueron informados en el Excel/borrador, el avance de
+    # un paso posterior nunca puede superar a un paso anterior ya informado.
+    required = 0
+    for step in reversed(route_steps):
+        if step.proceso.codigo == 'des':
+            continue
+        field_name = LEGACY_PROCESS_FIELDS.get(step.proceso.codigo)
+        value = component_data.get(field_name) if field_name else None
+        if value is None or int(value) <= 0:
+            continue
+        if int(value) < required:
+            component_data[field_name] = required
+        else:
+            required = int(value)
+
+
+def _normalized_process_rows(component, route_steps, process_catalog, user_id):
+    route_order = {
+        step.proceso.codigo: step.orden
+        for step in route_steps
+    }
+    applicable = set(route_order)
+    rows = []
+    for process in process_catalog:
+        is_applicable = process.codigo in applicable
+        legacy_field = LEGACY_PROCESS_FIELDS.get(process.codigo)
+        legacy_value = getattr(component, legacy_field, None) if legacy_field else None
+        completed = (
+            max(int(legacy_value), 0)
+            if is_applicable and legacy_value is not None
+            else None
+        )
+        rows.append(AvanceElementoProceso(
+            componente_id=component.id,
+            proceso_id=process.id,
+            orden=route_order.get(process.codigo, process.orden),
+            aplica=is_applicable,
+            cantidad_completada=completed,
+            actualizado_por_id=user_id,
+        ))
+    return rows
+
+
+def _sync_normalized_process_progress(component, field_name, value, user_id):
+    """Replica una edición V1 en el avance normalizado durante la transición."""
+    if field_name not in PROCESS_FIELDS:
+        return
+    process_code = next(
+        (
+            code
+            for code, legacy_field in LEGACY_PROCESS_FIELDS.items()
+            if legacy_field == field_name
+        ),
+        None,
+    )
+    if process_code is None:
+        return
+    process = ProcesoProduccion.query.filter_by(codigo=process_code).first()
+    if process is None:
+        return
+    progress = AvanceElementoProceso.query.filter_by(
+        componente_id=component.id,
+        proceso_id=process.id,
+    ).one_or_none()
+    if progress is None:
+        return
+
+    completed = None if value is None else max(int(value), 0)
+    progress.cantidad_completada = completed
+    if completed is not None and completed > 0 and progress.fecha_inicio is None:
+        progress.fecha_inicio = date.today()
+    if completed is not None and completed >= max(component.cantidad or 0, 0):
+        progress.fecha_fin = date.today()
+    elif completed is None or completed < max(component.cantidad or 0, 0):
+        progress.fecha_fin = None
+    progress.actualizado_por_id = user_id
+    progress.fecha_actualizacion = utc_now()
+
+
+def _component_process_sequence(component):
+    """Devuelve la secuencia aplicable sin confundir NULL con N/A."""
+    if component.ruta_id:
+        steps = (
+            RutaProceso.query.filter_by(ruta_id=component.ruta_id)
+            .order_by(RutaProceso.orden.asc())
+            .all()
+        )
+        sequence = [step.proceso.codigo for step in steps]
+        if sequence:
+            return sequence
+    return ['hab', 'arm', 'sol', 'lim', 'lib', 'gal', 'are', 'pin', 'des']
+
+
+def _apply_process_sequence_rules(component, field_name, value, user_id):
+    """Valida el flujo y eleva pasos previos que ya tenían avance."""
+    if field_name == 'des_real' or value is None or int(value) <= 0:
+        return {}
+    process_code = next(
+        (code for code, field in LEGACY_PROCESS_FIELDS.items() if field == field_name),
+        None,
+    )
+    sequence = [code for code in _component_process_sequence(component) if code != 'des']
+    if process_code not in sequence:
+        return {}
+
+    position = sequence.index(process_code)
+    for later_code in sequence[position + 1:]:
+        later_field = LEGACY_PROCESS_FIELDS[later_code]
+        later_value = getattr(component, later_field)
+        if later_value is not None and int(later_value) > int(value):
+            raise ValidationError(
+                f'{PROCESS_NAMES[process_code]} no puede quedar en {value}: '
+                f'{PROCESS_NAMES[later_code]} ya registra {later_value}.'
+            )
+
+    adjusted = {}
+    for previous_code in sequence[:position]:
+        previous_field = LEGACY_PROCESS_FIELDS[previous_code]
+        previous_value = getattr(component, previous_field)
+        # Un proceso vacío/0 puede omitirse. Solo un avance positivo ya
+        # informado participa en la regla de continuidad.
+        if previous_value is None or int(previous_value) <= 0:
+            continue
+        if int(previous_value) < int(value):
+            setattr(component, previous_field, int(value))
+            _sync_normalized_process_progress(
+                component,
+                previous_field,
+                int(value),
+                user_id,
+            )
+            adjusted[previous_field] = int(value)
+    return adjusted
+
+
 @produccion_bp.post('/api/produccion/importar')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('production.edit')
 def importar_excel():
     try:
         data = _get_json_object()
+        import_metadata = _validated_import_metadata(data)
         packing_list_id = _coerce_int(
             data.get('pl_id'),
             'pl_id',
@@ -988,6 +1508,88 @@ def importar_excel():
                 'error': 'La packing list no existe.',
             }), 404
 
+        work_order = db.session.get(CatalogoOT, packing_list.ot_id)
+        if work_order is None or work_order.archivado:
+            return jsonify({
+                'success': False,
+                'error': 'La OT de la packing list no existe.',
+            }), 404
+
+        detected_codes, stale_ot_header_confirmed = _validate_import_ot(
+            work_order,
+            import_metadata['ot_detectadas'],
+            source_file=import_metadata['archivo'],
+            mismatch_confirmed=(
+                import_metadata['ot_diferencia_confirmada']
+            ),
+        )
+        if stale_ot_header_confirmed:
+            expected_ot = _canonical_ot_code(work_order.ot)
+            detected_ot = ', '.join(detected_codes)
+            import_metadata['advertencias'].append(
+                'Se confirmó manualmente la importación para '
+                f'{expected_ot}; el encabezado del Excel indica '
+                f'{detected_ot}.'
+            )
+
+        component_route_codes = {
+            component['ruta_codigo']
+            for component in validated_components
+            if component['categoria'] == 'FABRICACION'
+            and component['ruta_codigo']
+        }
+        if (
+                not import_metadata['ruta_codigo']
+                and len(component_route_codes) == 1
+        ):
+            import_metadata['ruta_codigo'] = next(iter(component_route_codes))
+        elif (
+                not import_metadata['ruta_codigo']
+                and len(component_route_codes) > 1
+        ):
+            return jsonify({
+                'success': False,
+                'error': (
+                    'La lista contiene más de una ruta. Selecciona una ruta '
+                    'única antes de reemplazar los elementos.'
+                ),
+            }), 400
+
+        route = None
+        route_steps = []
+        if import_metadata['ruta_codigo']:
+            route = RutaProduccion.query.filter_by(
+                codigo=import_metadata['ruta_codigo'],
+                activo=True,
+            ).one_or_none()
+            if route is None:
+                return jsonify({
+                    'success': False,
+                    'error': 'La ruta de fabricación seleccionada no existe.',
+                }), 400
+            route_steps = _route_steps(route)
+            if not route_steps:
+                return jsonify({
+                    'success': False,
+                    'error': 'La ruta seleccionada no contiene procesos.',
+                }), 400
+
+        fabrication_count = sum(
+            component['categoria'] == 'FABRICACION'
+            for component in validated_components
+        )
+        if (
+                import_metadata['schema_version'] >= 2
+                and fabrication_count
+                and route is None
+        ):
+            return jsonify({
+                'success': False,
+                'error': (
+                    'Selecciona una ruta para los elementos de fabricación.'
+                ),
+            }), 400
+
         current_version = int(packing_list.version or 1)
         if (
                 expected_version is not None
@@ -1003,24 +1605,81 @@ def importar_excel():
                 'current_version': current_version,
             }), 409
 
-        previous_count = ComponenteOT.query.filter_by(
-            pl_id=packing_list_id
-        ).count()
+        previous_component_ids = [
+            component_id
+            for component_id, in db.session.query(ComponenteOT.id).filter_by(
+                pl_id=packing_list_id
+            ).all()
+        ]
+        previous_count = len(previous_component_ids)
+        if previous_component_ids:
+            AvanceElementoProceso.query.filter(
+                AvanceElementoProceso.componente_id.in_(
+                    previous_component_ids
+                )
+            ).delete(synchronize_session=False)
         ComponenteOT.query.filter_by(
             pl_id=packing_list_id
         ).delete(synchronize_session=False)
 
-        db.session.add_all([
-            ComponenteOT(
-                pl_id=packing_list_id,
-                **component,
+        import_record = ImportacionPackingList(
+            pl_id=packing_list_id,
+            archivo=import_metadata['archivo'] or None,
+            hoja=import_metadata['hoja'] or None,
+            ot_detectada=detected_codes[0] if detected_codes else None,
+            cantidad_items=len(validated_components),
+            advertencias=import_metadata['advertencias'],
+            creado_por_id=current_user.id,
+        )
+        db.session.add(import_record)
+        db.session.flush()
+
+        new_components = []
+        for component_data in validated_components:
+            component_route = (
+                route
+                if component_data['categoria'] == 'FABRICACION'
+                else None
             )
-            for component in validated_components
-        ])
+            if component_route is not None:
+                _initialize_legacy_route_progress(
+                    component_data,
+                    route_steps,
+                )
+            component_values = dict(component_data)
+            component_values.pop('ruta_codigo', None)
+            component = ComponenteOT(
+                pl_id=packing_list_id,
+                ruta_id=component_route.id if component_route else None,
+                importacion_id=import_record.id,
+                **component_values,
+            )
+            db.session.add(component)
+            new_components.append(component)
+        db.session.flush()
+
+        process_catalog = (
+            ProcesoProduccion.query.filter_by(activo=True)
+            .order_by(ProcesoProduccion.orden.asc())
+            .all()
+        )
+        normalized_rows = []
+        for component in new_components:
+            if component.categoria != 'FABRICACION' or component.ruta_id is None:
+                continue
+            normalized_rows.extend(_normalized_process_rows(
+                component,
+                route_steps,
+                process_catalog,
+                current_user.id,
+            ))
+        db.session.add_all(normalized_rows)
 
         if has_real_period:
             packing_list.fecha_inicio_real = real_start
             packing_list.fecha_termino_real = real_end
+        if import_metadata['schema_version'] >= 2:
+            packing_list.site = import_metadata['site'] or None
         packing_list.incrementar_version()
         db.session.add(BitacoraOT(
             ot_id=packing_list.ot_id,
@@ -1033,7 +1692,8 @@ def importar_excel():
             mensaje=(
                 f'Reemplazó {previous_count} elementos por '
                 f'{len(validated_components)} elementos en la packing list '
-                f'{packing_list.nombre}.'
+                f'{packing_list.nombre}'
+                + (f' con la ruta {route.nombre}.' if route else '.')
             ),
             tipo='audit',
         ))
@@ -1048,23 +1708,48 @@ def importar_excel():
                 },
             )
 
+        fabrication_weight = sum(
+            (
+                component['peso_total_kg'] or Decimal('0')
+                for component in validated_components
+                if component['categoria'] == 'FABRICACION'
+            ),
+            Decimal('0'),
+        )
         response = jsonify({
             'success': True,
             'message': 'Importación guardada correctamente.',
             'version': packing_list.version,
             'replaced_count': previous_count,
             'imported_count': len(validated_components),
+            'import_id': import_record.id,
+            'route': route.to_dict(include_processes=True) if route else None,
+            'fabrication_weight_kg': float(fabrication_weight),
+            'warnings': import_metadata['advertencias'],
             'pl': packing_list.to_dict(),
         })
         return _version_headers(response, packing_list)
     except ValidationError as error:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(error)}), 400
-    except IntegrityError:
+    except IntegrityError as error:
         db.session.rollback()
+        constraint_name = getattr(
+            getattr(error, 'orig', None),
+            'diag',
+            None,
+        )
+        current_app.logger.exception(
+            'packing_list_import_integrity_failed constraint=%s',
+            getattr(constraint_name, 'constraint_name', None),
+            extra={'user_id': current_user.get_id()},
+        )
         return jsonify({
             'success': False,
-            'error': 'La importación contiene datos que violan la integridad.',
+            'error': (
+                'No se pudo guardar la importación. Recarga la página e '
+                'inténtalo nuevamente.'
+            ),
         }), 409
     except Exception:
         db.session.rollback()
@@ -1117,7 +1802,7 @@ def obtener_componentes(pl_id):
 
 @produccion_bp.post('/api/produccion/actualizar_celda')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('production.edit')
 def actualizar_celda():
     try:
         data = _get_json_object()
@@ -1169,11 +1854,11 @@ def actualizar_celda():
                 'current_version': current_version,
             }), 409
 
-        component = db.session.get(
-            ComponenteOT,
-            component_id,
-            with_for_update=True,
-        )
+        component = db.session.execute(
+            select(ComponenteOT)
+            .where(ComponenteOT.id == component_id)
+            .with_for_update(of=ComponenteOT)
+        ).scalar_one_or_none()
         if component is None or component.pl_id != packing_list.id:
             db.session.rollback()
             return jsonify({
@@ -1187,11 +1872,29 @@ def actualizar_celda():
             data.get('valor'),
         )
         previous_value = getattr(component, field_name)
-        if previous_value == validated_value:
-            response = jsonify({'success': True, 'version': packing_list.version})
+        adjusted_fields = _apply_process_sequence_rules(
+            component,
+            field_name,
+            validated_value,
+            current_user.id,
+        ) if field_name in PROCESS_FIELDS else {}
+        if previous_value == validated_value and not adjusted_fields:
+            response_payload = {
+                'success': True,
+                'version': packing_list.version,
+            }
+            if field_name in PROCESS_FIELDS:
+                response_payload['adjusted_fields'] = {}
+            response = jsonify(response_payload)
             return _version_headers(response, packing_list)
 
         setattr(component, field_name, validated_value)
+        _sync_normalized_process_progress(
+            component,
+            field_name,
+            validated_value,
+            current_user.id,
+        )
         packing_list.incrementar_version()
         previous_text = str(
             previous_value if previous_value is not None else 'vacío'
@@ -1215,7 +1918,13 @@ def actualizar_celda():
             tipo='audit',
         ))
         db.session.commit()
-        response = jsonify({'success': True, 'version': packing_list.version})
+        response_payload = {
+            'success': True,
+            'version': packing_list.version,
+        }
+        if field_name in PROCESS_FIELDS:
+            response_payload['adjusted_fields'] = adjusted_fields
+        response = jsonify(response_payload)
         return _version_headers(response, packing_list)
     except ValidationError as error:
         db.session.rollback()
@@ -1240,7 +1949,7 @@ def actualizar_celda():
 
 @produccion_bp.put('/api/produccion/ot/<int:ot_id>/configuracion-procesos')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('production.process.edit')
 def actualizar_configuracion_procesos(ot_id):
     try:
         data = _get_json_object()
@@ -1309,6 +2018,7 @@ def actualizar_configuracion_procesos(ot_id):
 
 @produccion_bp.get('/api/mensajes/<int:ot_id>')
 @login_required
+@permission_required('messages.view')
 def obtener_mensajes(ot_id):
     if db.session.get(CatalogoOT, ot_id) is None:
         return jsonify({
@@ -1332,7 +2042,7 @@ def obtener_mensajes(ot_id):
 
 @produccion_bp.post('/api/mensajes/enviar')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('messages.write')
 def enviar_mensaje():
     try:
         data = _get_json_object()
@@ -1382,7 +2092,7 @@ def enviar_mensaje():
 
 @produccion_bp.delete('/api/mensajes/eliminar/<int:msg_id>')
 @login_required
-@roles_required('admin')
+@permission_required('messages.write')
 def eliminar_mensaje(msg_id):
     try:
         message = db.session.get(BitacoraOT, msg_id)

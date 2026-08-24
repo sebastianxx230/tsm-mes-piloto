@@ -91,7 +91,7 @@ def test_import_defaults_new_manufacturing_processes_to_not_applicable(
             component.gal_real,
             component.are_real,
             component.pin_real,
-        } == {-1}
+        } == {None}
         assert component.des_real == 0
         assert component.fecha_realizacion == date(2026, 6, 18)
         component_without_date = ComponenteOT.query.filter_by(

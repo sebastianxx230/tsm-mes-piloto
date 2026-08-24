@@ -6,48 +6,31 @@
 {% block head_extra %}
 <meta name="referrer" content="same-origin">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento_documentos.css') }}?v=2.2.0">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.5.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/seguimiento.css') }}?v=8.12.0">
 {% endblock %}
 
 {% block content %}
 <div class="tracking-page" data-tracking-url="{{ url_for('gestion_ot_bp.seguimiento_data', id=ot.item) }}">
-    <header class="tracking-order-card" aria-labelledby="tracking-page-title">
-        <div class="tracking-order-main">
-            <div class="tracking-order-copy">
-                <p class="tracking-kicker">Sistema de producción</p>
-                <h1 id="tracking-page-title">Seguimiento de producción</h1>
-                <div class="tracking-order-meta" aria-label="Datos principales de la orden">
-                    <span class="tracking-order-code">OT {{ ot.ot }}</span>
-                    <span class="tracking-order-client">{{ ot.cliente or 'Cliente sin registrar' }}</span>
-                    <span class="tracking-meta-date">
-                        <span class="material-symbols-rounded" aria-hidden="true">calendar_today</span>
-                        {{ ot.fecha_iniciado.strftime('%d/%m/%Y') if ot.fecha_iniciado else '-' }}
-                    </span>
-                </div>
-                <p class="tracking-order-description">
-                    <strong>Estructura:</strong>
-                    <span>{{ ot.descripcion or 'Sin descripción registrada' }}</span>
-                </p>
-            </div>
+    <div class="tracking-v3-toolbar" aria-label="Acciones de seguimiento">
+        <div class="tracking-v3-context">
+            <span><small>OT seleccionada</small><strong>{{ ot.ot }}</strong></span>
+            <span><small>Cliente</small><strong>{{ ot.cliente }}</strong></span>
+            <span class="tracking-v3-description"><small>Estructura</small><strong>{{ ot.descripcion or 'Sin descripción' }}</strong></span>
         </div>
-
-        <nav class="tracking-order-actions" aria-label="Acciones de la orden">
-            <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}" class="tracking-action tracking-action-secondary">
-                <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
-                <span>Volver al catálogo</span>
+        <div class="tracking-v3-actions">
+            <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}" class="tsm-button tsm-button-secondary">
+                <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span><span>Volver al catálogo</span>
             </a>
-            <button type="button" class="tracking-action tracking-action-activity" data-open-activity>
-                <span class="material-symbols-rounded" aria-hidden="true">forum</span>
-                <span>Actividad</span>
+            <button type="button" class="tsm-button tsm-button-secondary" data-open-activity>
+                <span class="material-symbols-rounded" aria-hidden="true">chat_bubble</span><span>Actividad</span>
             </button>
-            {% if current_user.rol in ['admin', 'editor'] %}
-            <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="tracking-action tracking-action-primary">
-                <span class="material-symbols-rounded" aria-hidden="true">manufacturing</span>
-                <span>Abrir producción</span>
-            </a>
+            {% if current_user.has_permission('production.edit') %}
+                <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="tsm-button tsm-button-primary">
+                    <span>Abrir producción</span>
+                </a>
             {% endif %}
-        </nav>
-    </header>
+        </div>
+    </div>
 
     <section class="tracking-overview" aria-label="Resumen general de la orden">
         <article class="tracking-overview-progress">
@@ -282,7 +265,7 @@
                     <span>Registro visual publicado para consulta de esta OT.</span>
                 </div>
                 <div class="tracking-workspace-actions">
-                {% if current_user.rol == 'admin' %}
+                {% if current_user.has_permission('photos.publish') %}
                 <button type="button" class="tracking-manage-photos" data-open-photo-manager>
                     <span>Gestionar fotografías</span>
                 </button>
@@ -300,7 +283,7 @@
                 {% else %}
                 <div class="tracking-empty tracking-photo-empty">
                     <strong>Aún no hay fotografías publicadas</strong>
-                    <p>{% if current_user.rol == 'admin' %}Selecciona evidencias de Drive para mostrarlas en esta vista.{% else %}El administrador todavía no seleccionó fotografías para esta OT.{% endif %}</p>
+                    <p>{% if current_user.has_permission('photos.publish') %}Selecciona evidencias de Drive para mostrarlas en esta vista.{% else %}Todavía no se publicaron fotografías para esta OT.{% endif %}</p>
                 </div>
                 {% endfor %}
             </div>
@@ -314,7 +297,7 @@
                     <span>Plano vigente publicado para consulta.</span>
                 </div>
                 <div class="tracking-workspace-actions">
-                {% if current_user.rol == 'admin' %}
+                {% if current_user.has_permission('documents.publish') %}
                 <button type="button" class="tracking-document-manage" data-open-document-manager="planos">
                     Gestionar plano
                 </button>
@@ -332,7 +315,7 @@
                     <span>Archivo vigente publicado para consulta.</span>
                 </div>
                 <div class="tracking-workspace-actions">
-                {% if current_user.rol == 'admin' %}
+                {% if current_user.has_permission('documents.publish') %}
                 <button type="button" class="tracking-document-manage" data-open-document-manager="otros">
                     Gestionar documentos
                 </button>
@@ -456,19 +439,19 @@
         </section>
     </div>
 
-    {% if current_user.rol == 'admin' %}
+    {% if current_user.has_permission('photos.publish') %}
     <div class="tracking-photo-manager-backdrop" id="tracking-photo-manager-backdrop" hidden>
         <section class="tracking-photo-manager" id="tracking-photo-manager" role="dialog" aria-modal="true" aria-labelledby="tracking-photo-manager-title" tabindex="-1">
             <header class="tracking-photo-manager-header">
                 <div>
-                    <p class="tracking-section-kicker">Evidencia visible</p>
+                    <p class="tracking-section-kicker">Fotografías de la OT</p>
                     <h2 id="tracking-photo-manager-title">Seleccionar fotografías</h2>
-                    <span>Sube imágenes a FOTOGRAFIAS o elige hasta {{ max_tracking_photos }} para publicarlas.</span>
+                    <span>Elige hasta {{ max_tracking_photos }} imágenes para publicar en seguimiento.</span>
                 </div>
                 <div class="tracking-photo-manager-header-actions">
                     <label class="tracking-drive-upload" for="tracking-photo-upload">
                         <input id="tracking-photo-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-                        <span>Subir fotografías</span>
+                        <span>Subir fotos</span>
                     </label>
                     <button type="button" class="tracking-icon-button" data-close-photo-manager aria-label="Cerrar selección de fotografías">
                         <span class="material-symbols-rounded" aria-hidden="true">close</span>
@@ -490,13 +473,14 @@
     </div>
     {% endif %}
 
-    {% if current_user.rol == 'admin' %}
+    {% if current_user.has_permission('documents.publish') %}
     <div class="tracking-document-manager-backdrop" id="tracking-document-manager-backdrop" hidden>
         <section class="tracking-document-manager" id="tracking-document-manager" role="dialog" aria-modal="true" aria-labelledby="tracking-document-manager-title" tabindex="-1">
             <header class="tracking-document-manager-header">
                 <div>
-                    <p class="tracking-section-kicker">Archivo visible en seguimiento</p>
+                    <p class="tracking-section-kicker">Archivo de la OT</p>
                     <h2 id="tracking-document-manager-title">Seleccionar archivo</h2>
+                    <span>Selecciona o sube el archivo que se mostrará en seguimiento.</span>
                 </div>
                 <button type="button" class="tracking-document-close" data-close-document-manager aria-label="Cerrar selección">×</button>
             </header>
@@ -586,13 +570,13 @@
     photoCandidatesUrl: {{ url_for('reporte_bp.api_obtener_fotos_drive', ot_id=ot.item)|tojson }},
     uploadPhotoUrl: {{ url_for('gestion_ot_bp.subir_foto_seguimiento', id=ot.item)|tojson }},
     savePhotosUrl: {{ url_for('gestion_ot_bp.guardar_fotos_seguimiento', id=ot.item)|tojson }},
-    canManagePhotos: {% if current_user.rol == 'admin' %}true{% else %}false{% endif %},
+    canManagePhotos: {% if current_user.has_permission('photos.publish') %}true{% else %}false{% endif %},
     maxTrackingPhotos: {{ max_tracking_photos }},
     documentsListUrl: {{ url_for('documentos_seguimiento_bp.listar_documentos', ot_id=ot.item)|tojson }},
     documentCandidatesUrlTemplate: {{ url_for('documentos_seguimiento_bp.listar_candidatos', ot_id=ot.item, category='__CATEGORY__')|tojson }},
     uploadDocumentUrlTemplate: {{ url_for('documentos_seguimiento_bp.subir_documento', ot_id=ot.item, category='__CATEGORY__')|tojson }},
     saveDocumentUrlTemplate: {{ url_for('documentos_seguimiento_bp.guardar_documento', ot_id=ot.item, category='__CATEGORY__')|tojson }},
-    canManageDocuments: {% if current_user.rol == 'admin' %}true{% else %}false{% endif %},
+    canManageDocuments: {% if current_user.has_permission('documents.publish') %}true{% else %}false{% endif %},
     currentUserId: {{ current_user.id|tojson }},
     csrfToken: {{ csrf_token()|tojson }},
     initialData: {{ tracking|tojson }}

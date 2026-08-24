@@ -113,7 +113,7 @@ def test_progress_cannot_exceed_component_quantity(client, login, ids):
     )
 
     assert response.status_code == 400
-    assert 'entre -1 y 10' in response.get_json()['error']
+    assert 'entre 0 y 10' in response.get_json()['error']
 
 
 def test_report_image_count_is_limited(client, login, ids):
@@ -250,6 +250,8 @@ def test_tracking_view_summarizes_progress_personnel_and_log(app, client, login,
         'description': 'Componente de prueba',
         'lot': 'PL DE PRUEBA',
         'processes': 'Armado, Habilitado',
+        'start_date': None,
+        'end_date': None,
     }]
 
 
@@ -385,6 +387,7 @@ def test_admin_can_create_and_manage_user(app, client, login):
         user = Usuario.query.filter_by(username='nuevo.lector').one()
         user_id = user.id
         assert user.rol == 'viewer'
+        assert 'produccion_planta' in user.role_keys
         assert user.activo is True
         assert check_password_hash(user.password_hash, 'password-segura')
 
@@ -405,6 +408,8 @@ def test_admin_can_create_and_manage_user(app, client, login):
         assert user.nombre == 'Nuevo Editor'
         assert user.username == 'nuevo.editor'
         assert user.rol == 'editor'
+        assert 'produccion_oficina' in user.role_keys
+        assert 'produccion_planta' not in user.role_keys
         assert user.activo is False
         assert check_password_hash(user.password_hash, 'password-renovada')
 

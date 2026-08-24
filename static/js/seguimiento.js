@@ -90,6 +90,14 @@
         return `${clampProgress(value).toFixed(1)}%`;
     }
 
+    function formatDate(value) {
+        if (!value) return '';
+        const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+        return Number.isNaN(date.getTime())
+            ? String(value)
+            : new Intl.DateTimeFormat('es-PE', {day: '2-digit', month: '2-digit', year: 'numeric'}).format(date);
+    }
+
     function plural(count, singular, pluralForm) {
         return count === 1 ? singular : pluralForm;
     }
@@ -482,6 +490,12 @@
         const processes = Array.isArray(processesValue)
             ? processesValue.join(', ')
             : String(processesValue || '');
+        const startDate = firstDefined(safeItem, [
+            'start_date', 'fecha_inicio_real', 'fechaInicio', 'startDate',
+        ], '');
+        const endDate = firstDefined(safeItem, [
+            'end_date', 'fecha_termino_real', 'fechaTermino', 'endDate', 'fecha_realizacion',
+        ], '');
 
         return {
             code: String(code),
@@ -489,6 +503,8 @@
             description: String(description),
             lot: String(lot || ''),
             processes,
+            startDate: String(startDate || ''),
+            endDate: String(endDate || ''),
         };
     }
 
@@ -1291,6 +1307,8 @@
             const metaParts = [];
             if (item.lot) metaParts.push({ label: 'Lote', value: item.lot });
             if (item.processes) metaParts.push({ label: 'Proceso', value: item.processes });
+            if (item.startDate) metaParts.push({ label: 'Inicio', value: formatDate(item.startDate) });
+            if (item.endDate) metaParts.push({ label: 'Término', value: formatDate(item.endDate) });
 
             if (metaParts.length) {
                 const meta = element('div', 'tracking-person-element-meta');

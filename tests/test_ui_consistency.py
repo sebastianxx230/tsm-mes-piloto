@@ -38,12 +38,19 @@ def test_hidden_material_icons_cannot_override_visibility():
 def test_login_uses_one_accessible_password_visibility_icon():
     login_template = read('templates/login.html')
     login_script = read('static/js/login.js')
+    login_css = read('static/css/login.css')
 
     assert login_template.count('id="passwordVisibilityIcon"') == 1
     assert 'id="eyeClosed"' not in login_template
     assert 'id="eyeOpen"' not in login_template
     assert "visibilityIcon.textContent" in login_script
     assert "aria-pressed" in login_script
+    assert 'Producción conectada.' in login_template
+    assert 'login.css' in login_template and '?v=2.1.0' in login_template
+    assert '@media (min-width: 900px) and (max-width: 1023px)' in login_css
+    assert 'Información trazable.' in login_template
+    assert 'Integra producción, almacén, documentación e indicadores' in login_template
+    assert 'Control y <span' not in login_template
 
 
 def test_catalog_keeps_compact_original_structure():
@@ -60,14 +67,14 @@ def test_catalog_keeps_compact_original_structure():
     assert 'grid-template-columns: minmax(280px, 1fr) auto;' in catalog_css
 
 
-def test_production_header_chat_and_matrix_share_stable_layout_contracts():
+def test_production_toolbar_chat_and_matrix_share_stable_layout_contracts():
     production_template = read('templates/produccion.html')
     production_css = read('static/css/produccion.css')
     production_script = read('static/js/produccion.js')
 
-    assert 'production-page-header' in production_template
-    assert 'production-header-actions' in production_template
-    assert 'production-header-button' in production_template
+    assert 'production-page-header' not in production_template
+    assert 'production-v3-toolbar' in production_template
+    assert 'production-v3-toolbar-actions' in production_template
     assert 'production-chat-drawer' in production_template
     assert 'production-chat-context' not in production_template
     assert 'Canal operativo' not in production_template
@@ -83,7 +90,7 @@ def test_production_header_chat_and_matrix_share_stable_layout_contracts():
     assert 'background: transparent;' in production_css
     assert 'backdrop-filter: none;' in production_css
 
-    assert '--matrix-frozen-width: 420px;' in production_css
+    assert '--matrix-frozen-width: 572px;' in production_css
     assert '.sticky-c5 {' in production_css
     assert '.sticky-c5 { position: sticky; left: 0;' in production_css
     assert '.sticky-corner-l { position: relative;' in production_css
@@ -93,6 +100,38 @@ def test_production_header_chat_and_matrix_share_stable_layout_contracts():
     assert 'configurarMatrizDesplazable();' in production_script
     assert 'requestAnimationFrame' in production_script
     assert 'ResizeObserver' in production_script
+    assert 'id="global-peso-fabricacion"' in production_template
+    assert 'Peso U. kg' in production_template
+    assert 'Peso T. kg' in production_template
+    assert 'function detectarColumnasAbastecimiento(row)' in production_script
+    assert "'PERNERIA:TEMPLATE': 'P-TEMP'" in production_script
+    assert 'production-group-scope' in production_css
+    assert 'class="production-matrix-toolbar"' in production_template
+    assert 'id="btn-guardar-avances"' in production_template
+    assert '<span>Guardar cambios</span>' in production_template
+    assert 'class="production-route-picker"' in production_template
+    assert '<select id="import-route-select"' not in production_template
+    assert 'function seleccionarRutaImportacion' in production_script
+    assert '.production-matrix-toolbar-actions {' in production_css
+    assert 'El Excel coincide con la información guardada.' in production_script
+    assert 'importedFingerprint === loadedComponentsFingerprint' in production_script
+
+
+def test_mes_navigation_is_text_only_and_dashboard_refreshes_without_layout_shift():
+    navigation = read('templates/_mes_navigation.html')
+    dashboard = read('templates/mes_dashboard.html')
+    dashboard_script = read('static/js/mes_dashboard.js')
+
+    assert 'material-symbols-rounded' not in navigation
+    assert '<span>Almacén</span>' in navigation
+    assert 'Kardex' not in navigation
+    assert 'mes-nav-refresh' not in navigation
+    assert 'id="dashboard-load-status"' not in dashboard
+    assert dashboard.count('mes-panel-loading-label') == 4
+    assert 'data-refresh-interval="15000"' in dashboard
+    assert 'window.setInterval(() =>' in dashboard_script
+    assert 'if (loadInFlight) return;' in dashboard_script
+    assert "if (!document.hidden) load();" in dashboard_script
 
 
 def test_messages_and_history_share_the_same_surface_components():
@@ -121,10 +160,31 @@ def test_messages_and_history_share_the_same_surface_components():
     assert 'activityBackdrop' not in scroll_lock
     assert '.tracking-audit-entry {' in tracking_css
 
-    back_position = tracking_template.index('<span>Volver al catálogo</span>')
-    activity_position = tracking_template.index('<span>Actividad</span>')
-    production_position = tracking_template.index('<span>Abrir producción</span>')
-    assert back_position < activity_position < production_position
+    assert 'class="tracking-order-card"' not in tracking_template
+    assert 'class="tracking-v3-toolbar"' in tracking_template
+    assert '<span>Volver al catálogo</span>' in tracking_template
+    assert '<span>Abrir producción</span>' in tracking_template
+    assert '>factory</span><span>Abrir producción</span>' not in tracking_template
+    assert tracking_template.count('data-open-activity') == 1
+    assert 'Seguimiento 8.7: resumen compacto' in tracking_css
+    assert 'Seguimiento 8.8: KPI y navegación operativa compactos.' in tracking_css
+    assert 'Seguimiento 8.9: evidencia y documentos con controles compactos unificados.' in tracking_css
+    assert 'Seguimiento 8.10: cabeceras equivalentes en los cinco módulos de detalle.' in tracking_css
+    assert 'Seguimiento 8.11: control derecho realmente compacto y consistente.' in tracking_css
+    assert 'Seguimiento 8.12: Actividad conserva el mismo contenedor que Volver al catálogo.' in tracking_css
+    assert 'grid-template-columns: minmax(220px, 1.3fr) repeat(4, minmax(92px, 1fr)) !important;' in tracking_css
+    assert 'font-size: 10.5px !important;' in tracking_css
+    assert 'Elige hasta {{ max_tracking_photos }} imágenes para publicar en seguimiento.' in tracking_template
+    assert 'Selecciona o sube el archivo que se mostrará en seguimiento.' in tracking_template
+
+
+def test_authenticated_header_uses_a_compact_primary_role_label():
+    base_template = read('templates/base.html')
+
+    assert "'administrador_sistema': 'Administrador'" in base_template
+    assert 'active_header_roles[0] if active_header_roles else none' in base_template
+    assert "active_header_roles|length - 1" in base_template
+    assert 'max-w-[150px]' in base_template
 
 
 def test_empty_document_states_are_centered_in_the_panel():

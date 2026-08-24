@@ -83,7 +83,7 @@
                 <svg class="w-10 h-3 text-blue-400 opacity-60" viewBox="0 0 50 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M0,10 L10,12 L20,8 L35,10 L50,2"/></svg>
             </div>
             <div class="flex items-end justify-between w-full">
-                <span class="text-[26px] font-black text-slate-800 leading-none">{{ counts.total_anio }}</span>
+                <span class="text-[22px] font-black text-slate-800 leading-none">{{ counts.total_anio }}</span>
                 <div class="flex items-center gap-0.5 text-[10px] font-bold text-emerald-500 mb-0.5">
                     <span class="material-symbols-rounded text-[13px]">arrow_upward</span>
                     <span>{{ stats.total_mes }} este mes</span>
@@ -97,7 +97,7 @@
                 <svg class="w-10 h-3 text-orange-400 opacity-60" viewBox="0 0 50 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M0,8 L15,12 L30,5 L50,8"/></svg>
             </div>
             <div class="flex items-end justify-between w-full">
-                <span class="text-[26px] font-black text-slate-800 leading-none">{{ counts.proceso }}</span>
+                <span class="text-[22px] font-black text-slate-800 leading-none">{{ counts.proceso }}</span>
                 <div class="flex items-center gap-0.5 text-[10px] font-bold text-slate-400 mb-0.5">
                     <span class="material-symbols-rounded text-[13px]">trending_flat</span>
                     <span>{{ stats.proceso_recientes }} recientes</span>
@@ -111,7 +111,7 @@
                 <svg class="w-10 h-3 text-emerald-400 opacity-60" viewBox="0 0 50 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M0,12 L15,8 L30,10 L50,4"/></svg>
             </div>
             <div class="flex items-end justify-between w-full">
-                <span class="text-[26px] font-black text-slate-800 leading-none">{{ counts.terminado }}</span>
+                <span class="text-[22px] font-black text-slate-800 leading-none">{{ counts.terminado }}</span>
                 <span class="text-[10px] font-bold text-slate-400 mb-0.5">Histórico</span>
             </div>
         </button>
@@ -122,7 +122,7 @@
                 <svg class="w-10 h-3 text-slate-300 stroke-current" viewBox="0 0 50 15" fill="none" stroke-width="2" stroke-linecap="round"><path d="M0,5 L15,8 L30,6 L50,10"/></svg>
             </div>
             <div class="flex items-end justify-between w-full">
-                <span class="text-[26px] font-black text-slate-800 leading-none">{{ counts.noempezado }}</span>
+                <span class="text-[22px] font-black text-slate-800 leading-none">{{ counts.noempezado }}</span>
                 <div class="flex items-center gap-0.5 text-[10px] font-bold text-slate-400 mb-0.5">
                     <span class="material-symbols-rounded text-[13px]">arrow_downward</span>
                     <span>{{ counts.noempezado }} en cola</span>
@@ -163,7 +163,7 @@
                 <span class="material-symbols-rounded absolute right-2 top-2.5 text-[16px] text-slate-400 pointer-events-none">expand_more</span>
             </div>
 
-            {% if current_user.rol in ['admin', 'editor'] %}
+            {% if current_user.has_permission('ot.create') %}
             <div class="catalog-toolbar-divider"></div>
             <button onclick="openModal('create')" class="catalog-primary-action flex h-10 flex-shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-blue-800 bg-blue-700 px-4 text-[12px] font-bold text-white shadow-sm transition-colors hover:bg-blue-800 focus:outline-none">
                 <span class="material-symbols-rounded text-[16px]">add</span>
@@ -208,7 +208,7 @@
                     </td>
 
                     <td class="px-4 py-2 align-middle text-right">
-                        {% if current_user.rol in ['admin', 'editor'] %}
+                        {% if current_user.has_permission('production.edit') or current_user.has_permission('ot.edit') or current_user.has_permission('reports.generate') %}
                         <div class="ot-actions-grid ml-auto">
                             <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="text-slate-500 hover:bg-blue-50 hover:text-blue-600" title="Gestionar producción">
                                 <span class="material-symbols-rounded text-[17px] block">route</span>
@@ -227,7 +227,7 @@
                             <button onclick="openModal('edit', this)" class="text-slate-500 hover:bg-slate-50 hover:text-slate-800" title="Editar OT">
                                 <span class="material-symbols-rounded text-[17px] block">edit_square</span>
                             </button>
-                            {% if current_user.rol == 'admin' %}
+                            {% if current_user.has_permission('ot.archive') %}
                             <button onclick="eliminarOT({{ ot.item }}, {{ ot.version }})" class="text-slate-500 hover:bg-red-50 hover:text-red-600" title="Archivar OT">
                                 <span class="material-symbols-rounded text-[17px] block">archive</span>
                             </button>
@@ -285,8 +285,8 @@
                     </div>
                 </div>
 
-                {% if current_user.rol in ['admin', 'editor'] %}
-                <div class="grid {% if current_user.rol == 'admin' %}grid-cols-5{% else %}grid-cols-4{% endif %} gap-2 mt-2">
+                {% if current_user.has_permission('production.edit') or current_user.has_permission('ot.edit') or current_user.has_permission('reports.generate') %}
+                <div class="grid {% if current_user.has_permission('ot.archive') %}grid-cols-5{% else %}grid-cols-4{% endif %} gap-2 mt-2">
                     <a href="{{ url_for('gestion_ot_bp.produccion', id=ot.item) }}" class="h-[30px] flex items-center justify-center text-slate-500 bg-slate-50 border border-slate-200 rounded transition-colors shadow-sm">
                         <span class="material-symbols-rounded text-[16px]">route</span>
                     </a>
@@ -304,7 +304,7 @@
                     <button onclick="openModal('edit', this)" class="h-[30px] flex items-center justify-center text-slate-500 bg-slate-50 border border-slate-200 rounded transition-colors shadow-sm">
                         <span class="material-symbols-rounded text-[16px]">edit_square</span>
                     </button>
-                    {% if current_user.rol == 'admin' %}
+                    {% if current_user.has_permission('ot.archive') %}
                     <button onclick="eliminarOT({{ ot.item }}, {{ ot.version }})" class="h-[30px] flex items-center justify-center text-red-500 bg-red-50 border border-red-100 rounded transition-colors shadow-sm" title="Archivar OT">
                         <span class="material-symbols-rounded text-[16px]">archive</span>
                     </button>
