@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ module.name }} · Próximamente{% endblock %}
+{% block page_title %}{{ module.name }}{% endblock %}
+
+{% block content %}
+<div class="mes-page upcoming-page">
+    <section class="upcoming-card">
+        <span class="upcoming-icon material-symbols-rounded">{{ module.icon }}</span>
+        <p class="mes-eyebrow">Hoja de ruta del MES</p>
+        <h1>{{ module.name }}</h1>
+        <span class="mes-phase-badge">Próximamente</span>
+        <p class="upcoming-description">{{ module.description }}</p>
+        <div class="upcoming-dependencies"><strong>Se construirá cuando estén estables:</strong>{% for dependency in module.dependencies %}<span><i class="material-symbols-rounded">check_circle</i>{{ dependency }}</span>{% endfor %}</div>
+        <div class="upcoming-actions"><a class="mes-button mes-button-primary" href="{{ url_for('gestion_ot_bp.catalogo_ot') }}"><span class="material-symbols-rounded">factory</span>Ir a Producción</a><a class="mes-button mes-button-secondary" href="{{ url_for('mes_bp.dashboard') }}"><span class="material-symbols-rounded">dashboard</span>Ver dashboard</a></div>
+    </section>
+</div>
+{% endblock %}

@@ -104,18 +104,19 @@ body {
     color: #0f172a;
 }
 
-.tsm-page-header {
-    position: relative;
+.tsm-compact-actions {
     display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.report-compact-toolbar {
+    display: flex;
+    min-height: 42px;
+    align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    overflow: hidden;
-    padding: 1rem 1.25rem;
-    border: 1px solid #e2e8f0;
-    border-left: 4px solid #2563eb;
-    border-radius: var(--tsm-radius);
-    background: #ffffff;
-    box-shadow: var(--tsm-shadow-panel);
+    gap: 0.75rem;
 }
 
 .tsm-page-icon {
@@ -272,11 +273,6 @@ body {
         left: auto !important;
         right: 0 !important;
         transform: none !important;
-    }
-
-    .tsm-page-header {
-        align-items: flex-start;
-        padding: 0.875rem 1rem;
     }
 
     .tsm-page-icon { display: none; }

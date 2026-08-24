@@ -3,6 +3,7 @@ import os
 
 from alembic import context
 from flask import current_app
+from sqlalchemy.engine import make_url
 
 
 config = context.config
@@ -13,11 +14,27 @@ target_db = current_app.extensions['migrate'].db
 target_metadata = target_db.metadata
 
 
+def _migration_url():
+    """Ignore committed example URLs and fall back to Flask's active engine."""
+    migration_url = (os.environ.get('MIGRATIONS_DATABASE_URL') or '').strip()
+    if not migration_url:
+        return None
+    if migration_url.startswith('postgres://'):
+        migration_url = migration_url.replace('postgres://', 'postgresql://', 1)
+    try:
+        parsed = make_url(migration_url)
+    except Exception:
+        return None
+    if (parsed.host or '').lower() in {
+        'host', 'host-pooler', 'hostname', 'localhost.example'
+    }:
+        return None
+    return migration_url
+
+
 def get_engine_url():
-    migration_url = os.environ.get('MIGRATIONS_DATABASE_URL')
+    migration_url = _migration_url()
     if migration_url:
-        if migration_url.startswith('postgres://'):
-            migration_url = migration_url.replace('postgres://', 'postgresql://', 1)
         return migration_url.replace('%', '%%')
     try:
         return target_db.engine.url.render_as_string(hide_password=False).replace('%', '%%')
@@ -41,7 +58,7 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
-    migration_url = os.environ.get('MIGRATIONS_DATABASE_URL')
+    migration_url = _migration_url()
     connectable = (
         target_db.engine
         if not migration_url
@@ -49,8 +66,6 @@ def run_migrations_online():
     )
     if migration_url:
         from sqlalchemy import create_engine
-        if migration_url.startswith('postgres://'):
-            migration_url = migration_url.replace('postgres://', 'postgresql://', 1)
         connectable = create_engine(migration_url, pool_pre_ping=True)
     with connectable.connect() as connection:
         context.configure(

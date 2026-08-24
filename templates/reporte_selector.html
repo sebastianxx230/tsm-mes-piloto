@@ -13,7 +13,7 @@
 {% endblock %}
 
 {% block content %}
-{% set can_generate = current_user.rol in ['admin', 'editor'] %}
+{% set can_generate = current_user.has_permission('reports.generate') %}
 <div id="toast-container" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[99999] flex flex-col gap-2 pointer-events-none"></div>
 
 {% if can_generate %}
@@ -60,35 +60,13 @@
 <div class="flex flex-col h-full w-full font-sans">
     <div class="max-w-[1500px] mx-auto w-full flex flex-col h-full">
 
-        <div class="tsm-page-header mb-4 flex-col items-start xl:flex-row xl:items-center">
-
-            <div class="flex items-center gap-4 w-full xl:w-auto">
-                <div class="tsm-page-icon">
-                    <span class="material-symbols-rounded text-2xl">photo_library</span>
-                </div>
-                <div>
-                    <p class="tsm-kicker mb-1">Evidencia y documentación</p>
-                    <h1 class="tsm-page-title">Reporte Fotográfico</h1>
-                    <div class="flex flex-wrap items-center gap-2 text-[11px] font-bold mt-1">
-                        <span class="text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">OT {{ ot.ot }}</span>
-                        <span class="text-slate-300">•</span>
-                        <span class="text-slate-600">{{ ot.cliente }}</span>
-                        <span class="text-slate-300 hidden sm:inline">•</span>
-
-                        <div class="flex items-center gap-1 group bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
-                            <span class="material-symbols-rounded text-[13px] text-slate-400">calendar_today</span>
-                            <span id="fecha-display" class="{% if can_generate %}cursor-pointer hover:text-blue-600 transition-colors{% endif %}" {% if can_generate %}ondblclick="editFecha()" title="Doble clic para editar"{% endif %}>
-                                {% if ot.fecha_iniciado %}{{ ot.fecha_iniciado }}{% else %}-{% endif %}
-                            </span>
-                            {% if can_generate %}<input type="text" id="fecha-input" class="hidden border border-blue-400 rounded-md px-2 py-0.5 text-[11px] text-slate-900 outline-none w-24" value="{% if ot.fecha_iniciado %}{{ ot.fecha_iniciado }}{% endif %}" placeholder="dd/mm/yyyy" onblur="saveFecha()" onkeydown="if(event.key==='Enter') this.blur();">{% endif %}
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2 text-[12px] font-medium mt-1 text-slate-600">
-                        <span class="font-bold text-slate-700">Estructura:</span>
-                        <span id="estructura-display" class="{% if can_generate %}cursor-pointer hover:text-blue-600 transition-colors{% endif %}" {% if can_generate %}ondblclick="editEstructura()" title="Doble clic para editar nombre"{% endif %}>{{ ot.descripcion }}</span>
-                        {% if can_generate %}<input type="text" id="estructura-input" class="hidden border border-blue-400 rounded-md px-2 py-0.5 text-[12px] text-slate-900 outline-none w-full min-w-[250px]" value="{{ ot.descripcion }}" onblur="saveEstructura()" onkeydown="if(event.key==='Enter') this.blur();">{% endif %}
-                    </div>
-                </div>
+        <div class="report-compact-toolbar mb-3">
+            <div class="flex min-w-0 flex-wrap items-center gap-2 text-[11px] font-bold">
+                <span class="rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-blue-700">OT {{ ot.ot }}</span>
+                <span class="text-slate-600">{{ ot.cliente }}</span>
+                <span id="estructura-display" class="hidden max-w-[420px] truncate text-slate-400 lg:inline {% if can_generate %}cursor-pointer hover:text-blue-600{% endif %}" {% if can_generate %}ondblclick="editEstructura()"{% endif %} title="{{ ot.descripcion }}">{{ ot.descripcion }}</span>
+                <span id="fecha-display" class="rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-500 {% if can_generate %}cursor-pointer hover:text-blue-600{% endif %}" {% if can_generate %}ondblclick="editFecha()" title="Doble clic para editar"{% endif %}>{% if ot.fecha_iniciado %}{{ ot.fecha_iniciado }}{% else %}-{% endif %}</span>
+                {% if can_generate %}<input type="text" id="fecha-input" class="hidden w-24 rounded-md border border-blue-400 px-2 py-1 text-[11px] text-slate-900 outline-none" value="{% if ot.fecha_iniciado %}{{ ot.fecha_iniciado }}{% endif %}" placeholder="dd/mm/yyyy" onblur="saveFecha()" onkeydown="if(event.key==='Enter') this.blur();"><input type="text" id="estructura-input" class="hidden" value="{{ ot.descripcion }}">{% endif %}
             </div>
 
             <div class="flex flex-wrap items-center gap-2 w-full xl:w-auto justify-end">

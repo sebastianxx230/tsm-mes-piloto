@@ -23,3 +23,73 @@
         animation: none;
     }
 }
+
+.login-product-copy {
+    max-width: 500px;
+}
+
+.login-product-kicker,
+.login-access-kicker {
+    display: block;
+    color: #93c5fd;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .17em;
+    text-transform: uppercase;
+}
+
+.login-scope {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 28px;
+}
+
+.login-scope span {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    padding: 0 10px;
+    border: 1px solid rgba(148, 163, 184, .34);
+    border-radius: 5px;
+    background: rgba(15, 23, 42, .36);
+    color: #dbe7f5;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.login-access-kicker {
+    margin-bottom: 5px;
+    color: #64748b;
+    font-size: 8px;
+}
+
+.login-access-heading {
+    text-align: center;
+}
+
+@media (min-width: 900px) and (max-width: 1023px) {
+    .login-left-panel {
+        display: flex !important;
+        width: 44% !important;
+    }
+
+    .login-left-panel > .relative {
+        padding-right: 34px !important;
+        padding-left: 34px !important;
+    }
+
+    .login-left-panel h2 {
+        font-size: 30px !important;
+    }
+
+    .login-left-panel p {
+        font-size: 13px !important;
+    }
+
+    .login-main-panel {
+        width: 56% !important;
+        padding-right: 42px !important;
+        padding-left: 42px !important;
+    }
+}

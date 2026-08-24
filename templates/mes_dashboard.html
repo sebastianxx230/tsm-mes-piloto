@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Dashboard General MES{% endblock %}
+{% block page_title %}Dashboard General MES{% endblock %}
+
+{% block content %}
+<div id="mes-dashboard"
+     class="mes-page mes-dashboard-page"
+     data-summary-url="{{ url_for('mes_bp.dashboard_summary') }}"
+     data-operations-url="{{ url_for('mes_bp.dashboard_operations') }}"
+     data-refresh-interval="15000">
+
+    <section class="mes-kpi-grid" aria-label="Indicadores principales" aria-busy="true">
+        {% for key, icon, label, description, color in [
+            ('active-orders', 'assignment', 'OT activas', 'En proceso o pendientes', 'blue'),
+            ('physical-progress', 'monitoring', 'Avance físico', 'kg equivalentes', 'green'),
+            ('delayed-orders', 'schedule', 'OT fuera de fecha', 'Según fecha de término', 'red'),
+            ('pending-galvanizing', 'water_drop', 'Pendiente galvanizado', 'kg liberados aún no galvanizados', 'orange'),
+            ('dispatched-weight', 'local_shipping', 'Peso despachado', 'kg registrados en despacho', 'slate')
+        ] %}
+        <article class="mes-kpi-card is-{{ color }}">
+            <span class="mes-kpi-icon material-symbols-rounded">{{ icon }}</span>
+            <div><small>{{ label }}</small><strong id="kpi-{{ key }}" class="mes-value-loading">—</strong><p id="kpi-{{ key }}-detail">{{ description }}</p></div>
+        </article>
+        {% endfor %}
+    </section>
+
+    <div class="mes-dashboard-grid">
+        <section class="mes-panel mes-panel-orders">
+            <header class="mes-panel-header"><div><span class="mes-section-mark"></span><h2>Producción por OT</h2></div><a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}">Ver catálogo <span>→</span></a></header>
+            <div id="dashboard-orders" class="mes-panel-loading" aria-busy="true"><span class="mes-panel-loading-label">Cargando producción…</span><span class="mes-skeleton-line is-wide"></span><span class="mes-skeleton-line"></span><span class="mes-skeleton-line is-medium"></span></div>
+        </section>
+
+        <section class="mes-panel mes-panel-process">
+            <header class="mes-panel-header"><div><span class="mes-section-mark"></span><h2>Avance por proceso</h2></div></header>
+            <div id="dashboard-processes" class="mes-panel-loading" aria-busy="true"><span class="mes-panel-loading-label">Cargando procesos…</span><span class="mes-skeleton-line"></span><span class="mes-skeleton-line is-wide"></span><span class="mes-skeleton-line is-medium"></span></div>
+        </section>
+
+        <section class="mes-panel mes-panel-supply">
+            <header class="mes-panel-header"><div><span class="mes-section-mark"></span><h2>Abastecimiento importado</h2></div><a href="{{ url_for('mes_bp.almacen') }}">Abrir almacén <span>→</span></a></header>
+            <div id="dashboard-supplies" class="mes-panel-loading" aria-busy="true"><span class="mes-panel-loading-label">Cargando abastecimiento…</span><span class="mes-skeleton-line is-wide"></span><span class="mes-skeleton-line is-medium"></span></div>
+        </section>
+
+        <section class="mes-panel mes-panel-alerts">
+            <header class="mes-panel-header"><div><span class="mes-section-mark"></span><h2>Alertas y pendientes</h2></div></header>
+            <div id="dashboard-alerts" class="mes-panel-loading" aria-busy="true"><span class="mes-panel-loading-label">Cargando alertas…</span><span class="mes-skeleton-line"></span><span class="mes-skeleton-line is-wide"></span></div>
+        </section>
+    </div>
+
+    <section class="mes-report-strip">
+        <header><span class="mes-section-mark"></span><div><h2>Reportes operativos</h2><p>Se habilitarán sobre la fuente de datos V2, sin duplicar información.</p></div></header>
+        <div>{% for icon, label in [('monitoring','Avance OT'),('fact_check','Elementos faltantes'),('water_drop','Pendiente galvanizado'),('inventory','Abastecimiento'),('picture_as_pdf','Exportar PDF')] %}<a href="{{ url_for('mes_bp.upcoming_module', module_key='reportes') }}"><span class="material-symbols-rounded">{{ icon }}</span>{{ label }}</a>{% endfor %}</div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='js/mes_dashboard.js') }}?v=2.1.0"></script>{% endblock %}

@@ -11,7 +11,7 @@ from googleapiclient.errors import HttpError
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
-from utils.auth import roles_required
+from utils.auth import permission_required
 from db_config import db
 from models.catalogo_ot import CatalogoOT
 from models.produccion import BitacoraOT, ComponenteOT, FotoSeguimiento, PackingList
@@ -164,7 +164,7 @@ def catalogo_ot():
 
 @gestion_ot_bp.route('/catalogo-ot/guardar', methods=['POST'])
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('ot.edit')
 def guardar_ot():
     try:
         data = _validate_ot_payload(request.get_json(silent=True))
@@ -227,7 +227,7 @@ def guardar_ot():
 
 @gestion_ot_bp.route('/catalogo-ot/eliminar/<int:id>', methods=['POST'])
 @login_required # Protege la ruta
-@roles_required('admin')
+@permission_required('ot.archive')
 def eliminar_ot(id):
     try:
         payload = request.get_json(silent=True) or {}
@@ -263,7 +263,11 @@ def eliminar_ot(id):
 @gestion_ot_bp.route('/produccion/<int:id>')
 @login_required
 def produccion(id):
-    if current_user.rol == 'viewer':
+    # Inicializa roles y permisos antes de decidir si el usuario puede editar.
+    # Esta ruta no pasa por un decorador de permiso porque los usuarios de
+    # consulta deben ser redirigidos a Seguimiento, no recibir un 403.
+    ensure_production_storage_schema()
+    if not current_user.has_permission('production.edit'):
         ot = db.session.get(CatalogoOT, id)
         if not ot or ot.archivado:
             return "OT no encontrada", 404
@@ -274,7 +278,7 @@ def produccion(id):
 
 @gestion_ot_bp.put('/api/produccion/ot/<int:id>/fecha-termino')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('ot.edit')
 def actualizar_fecha_termino(id):
     try:
         data = request.get_json(silent=True) or {}
@@ -416,7 +420,7 @@ def _read_tracking_photo_upload(file_storage):
 
 @gestion_ot_bp.post('/api/seguimiento/<int:id>/fotos/subir')
 @login_required
-@roles_required('admin')
+@permission_required('photos.upload')
 def subir_foto_seguimiento(id):
     ot = db.session.get(CatalogoOT, id)
     if ot is None or ot.archivado:
@@ -510,7 +514,7 @@ def subir_foto_seguimiento(id):
 
 @gestion_ot_bp.put('/api/seguimiento/<int:id>/fotos')
 @login_required
-@roles_required('admin')
+@permission_required('photos.publish')
 def guardar_fotos_seguimiento(id):
     try:
         ensure_tracking_storage_schema()
@@ -666,7 +670,6 @@ def seguimiento_photo_image(photo_id):
 
 def _render_production(id):
     try:
-        ensure_production_storage_schema()
         ot = db.session.get(CatalogoOT, id)
         if not ot or ot.archivado:
             return "OT no encontrada", 404
@@ -861,6 +864,17 @@ def _build_tracking_summary(ot_id):
                     'brand': component.marca or '',
                     'description': component.descripcion or 'Sin descripción registrada',
                     'lot': packing_list.nombre,
+                    'start_date': (
+                        component.fecha_inicio_real.isoformat()
+                        if component.fecha_inicio_real else None
+                    ),
+                    'end_date': (
+                        component.fecha_termino_real.isoformat()
+                        if component.fecha_termino_real else (
+                            component.fecha_realizacion.isoformat()
+                            if component.fecha_realizacion else None
+                        )
+                    ),
                     'process_keys': set(),
                 })
                 element_detail['process_keys'].add(process_key)
@@ -917,6 +931,8 @@ def _build_tracking_summary(ot_id):
                 'description': element['description'],
                 'lot': element['lot'],
                 'processes': ', '.join(element_processes),
+                'start_date': element['start_date'],
+                'end_date': element['end_date'],
             })
         personnel_list.append({
             'name': entry['name'],

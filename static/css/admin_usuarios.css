@@ -20,45 +20,45 @@
 }
 
 .access-table-columns col:nth-child(1) {
-    width: 44% !important;
+    width: 38% !important;
 }
 
 .access-table-columns col:nth-child(2) {
-    width: 13% !important;
+    width: 32% !important;
 }
 
 .access-table-columns col:nth-child(3) {
-    width: 27% !important;
+    width: 15% !important;
 }
 
 .access-table-columns col:nth-child(4) {
-    width: 16% !important;
+    width: 15% !important;
 }
 
 /* Refuerzo por celda para evitar que otras reglas globales cambien la tabla. */
 .access-table th:nth-child(1),
 .access-table td:nth-child(1) {
-    width: 44% !important;
+    width: 38% !important;
     text-align: left;
 }
 
 .access-table th:nth-child(2),
 .access-table td:nth-child(2) {
-    width: 13% !important;
+    width: 32% !important;
     text-align: center;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .access-table th:nth-child(3),
 .access-table td:nth-child(3) {
-    width: 27% !important;
+    width: 15% !important;
     text-align: center;
     white-space: nowrap;
 }
 
 .access-table th:nth-child(4),
 .access-table td:nth-child(4) {
-    width: 16% !important;
+    width: 15% !important;
     text-align: right;
     white-space: nowrap;
 }
@@ -111,13 +111,22 @@
 }
 
 .access-role {
-    min-width: 92px;
+    min-width: 0;
     justify-content: center;
     padding: 0.4rem 0.6rem;
     border: 1px solid #dbeafe;
     background: #eff6ff;
     color: #1d4ed8;
 }
+
+.access-role-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.access-role-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.access-role-grid label { display: flex; min-width: 0; align-items: flex-start; gap: 8px; padding: 8px 9px; border: 1px solid #dce4ee; border-radius: 6px; background: #fff; cursor: pointer; }
+.access-role-grid label:has(input:checked) { border-color: #9bbcec; background: #f6f9fe; }
+.access-role-grid input { margin-top: 2px; accent-color: #2563eb; }
+.access-role-grid span, .access-role-grid strong, .access-role-grid small { display: block; min-width: 0; }
+.access-role-grid strong { color: #334155; font-size: 10px; }
+.access-role-grid small { margin-top: 2px; color: #8491a3; font-size: 8px; line-height: 1.35; }
 
 .access-role--admin {
     border-color: #cbd5e1;
@@ -283,6 +292,7 @@ body.access-dialog-open {
 }
 
 @media (max-width: 767px) {
+    .access-role-grid { grid-template-columns: 1fr; }
     .access-table-wrap {
         max-height: none;
         min-height: 0;

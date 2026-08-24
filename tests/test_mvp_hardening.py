@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 import controllers.reporte_fotografico_controller as report_controller
 from app import _classify_database_error, _normalize_database_url
 from db_config import db
@@ -116,6 +118,13 @@ def test_database_url_normalizes_common_dashboard_pastes():
     assert _normalize_database_url(f"psql '{expected}'") == expected
     assert _normalize_database_url(f'  DATABASE_URL="{expected}"  ') == expected
     assert _normalize_database_url('sqlite:///test.sqlite') == 'sqlite:///test.sqlite'
+
+
+def test_database_url_rejects_documentation_placeholder():
+    with pytest.raises(ValueError, match='valores de ejemplo'):
+        _normalize_database_url(
+            'postgresql://app_user:password@host-pooler:5432/neondb?sslmode=require'
+        )
 
 
 def test_database_error_classification_does_not_expose_details():

@@ -5,7 +5,7 @@
 {% block title %}Iniciar Sesión{% endblock %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}?v=2.1.0">
 {% endblock %}
 
 {% block content %}
@@ -22,21 +22,29 @@
         </div>
 
 
-        <div class="relative z-10 flex h-full flex-col justify-start pt-[15vh] px-12 xl:px-20">
-            <div>
-                <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-white xl:text-[40px]">
-                    Control y <span class="text-blue-400">seguimiento</span><br>de OTs.
+        <div class="relative z-10 flex h-full flex-col justify-center px-12 xl:px-20">
+            <div class="login-product-copy">
+                <span class="login-product-kicker">Plataforma de operación industrial</span>
+                <h2 class="mt-5 text-4xl font-extrabold leading-tight tracking-tight text-white xl:text-[40px]">
+                    Producción conectada.<br><span class="text-blue-400">Información trazable.</span>
                 </h2>
 
                 <p class="mt-6 max-w-md text-[15px] font-medium leading-relaxed text-slate-300">
-                    Centraliza la fabricación, documentación y reportes en un entorno seguro y de alta disponibilidad.
+                    Integra producción, almacén, documentación e indicadores para gestionar cada orden desde un solo entorno.
                 </p>
+
+                <div class="login-scope" aria-label="Áreas integradas">
+                    <span>Producción</span>
+                    <span>Almacén</span>
+                    <span>Seguimiento</span>
+                    <span>Reportes</span>
+                </div>
             </div>
         </div>
     </div>
 
 
-    <main class="relative flex h-full w-full flex-col items-center justify-center bg-[#f4f7fa] px-4 lg:w-[54%] lg:px-12 xl:px-24">
+    <main class="login-main-panel relative flex h-full w-full flex-col items-center justify-center bg-[#f4f7fa] px-4 lg:w-[54%] lg:px-12 xl:px-24">
 
         <div class="absolute left-0 top-0 h-1.5 w-full bg-blue-700 lg:hidden"></div>
 
@@ -52,12 +60,13 @@
             
             <div class="w-full rounded-lg border border-slate-300 border-l-4 border-l-blue-700 bg-white px-8 py-8 shadow-sm sm:px-10">
 
-                <div class="mb-6 text-center">
+                <div class="login-access-heading mb-6">
+                    <span class="login-access-kicker">Plataforma MES</span>
                     <h1 class="text-[20px] font-extrabold tracking-tight text-slate-900">
-                        Acceso al sistema
+                        Bienvenido
                     </h1>
                     <p class="mt-1 text-[12px] font-medium text-slate-500">
-                        Inicia sesión para continuar.
+                        Ingresa con tus credenciales para continuar.
                     </p>
                 </div>
 
