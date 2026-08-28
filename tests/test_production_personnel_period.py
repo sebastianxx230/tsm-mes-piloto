@@ -1,7 +1,11 @@
 from datetime import date
 
 from db_config import db
-from models.produccion import ComponenteOT, PersonalProduccion
+from models.produccion import (
+    AsignacionPersonalProceso,
+    ComponenteOT,
+    PersonalProduccion,
+)
 
 
 def test_personnel_directory_normalizes_names_and_assignments(
@@ -46,6 +50,10 @@ def test_personnel_directory_normalizes_names_and_assignments(
 
     with app.app_context():
         assert PersonalProduccion.query.count() == 1
+        assignment = AsignacionPersonalProceso.query.one()
+        assert assignment.avance.componente_id == ids['component']
+        assert assignment.avance.proceso.codigo == 'hab'
+        assert assignment.personal.nombre == 'Álvaro Pérez'
         component = db.session.get(ComponenteOT, ids['component'])
         assert component.operario == 'hab:Álvaro Pérez'
 

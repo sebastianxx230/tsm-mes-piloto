@@ -52,6 +52,27 @@ def test_dashboard_normalizes_finished_state_and_excludes_it(
     assert operations['orders'] == []
 
 
+def test_dashboard_excludes_orders_that_have_not_started(
+        app,
+        client,
+        login,
+        ids,
+):
+    with app.app_context():
+        work_order = db.session.get(CatalogoOT, ids['ot'])
+        work_order.estado = 'No Empezado'
+        db.session.commit()
+
+    login('viewer')
+    summary = client.get('/api/mes/dashboard/resumen').get_json()
+    operations = client.get('/api/mes/dashboard/operacion').get_json()
+
+    assert summary['active_orders'] == 0
+    assert operations['orders'] == []
+    assert operations['processes'] == []
+    assert operations['supplies'] == []
+
+
 def test_profile_has_no_active_operational_module_or_decorative_summary(client, login):
     login('admin')
 

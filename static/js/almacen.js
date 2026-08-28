@@ -53,11 +53,15 @@
 
     function updateWarehouseKpis(kpis) {
         if (!kpis) return;
-        ['requirements', 'pending', 'purchased', 'available', 'dispatched']
+        [
+            'requirements', 'pending', 'in-purchase', 'purchased',
+            'not-purchased', 'available', 'dispatched'
+        ]
             .forEach((key) => {
                 const target = document.getElementById(`warehouse-kpi-${key}`);
-                if (target && Number.isFinite(Number(kpis[key]))) {
-                    target.textContent = String(kpis[key]);
+                const payloadKey = key.replace('-', '_');
+                if (target && Number.isFinite(Number(kpis[payloadKey]))) {
+                    target.textContent = String(kpis[payloadKey]);
                 }
             });
     }

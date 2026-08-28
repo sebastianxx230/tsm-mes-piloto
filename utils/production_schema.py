@@ -13,6 +13,7 @@ from sqlalchemy import inspect, text
 
 from db_config import db
 from models.produccion import (
+    AsignacionPersonalProceso,
     AvanceElementoProceso,
     ComponenteOT,
     ImportacionPackingList,
@@ -74,6 +75,7 @@ V2_TABLES = (
     ImportacionPackingList,
     RutaProceso,
     AvanceElementoProceso,
+    AsignacionPersonalProceso,
     MovimientoAlmacen,
 )
 

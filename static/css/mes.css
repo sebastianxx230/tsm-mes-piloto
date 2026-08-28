@@ -86,14 +86,15 @@
 .mes-kpi-card.is-red .mes-kpi-icon { background: #fff0f0; color: var(--mes-red); }
 .mes-kpi-card.is-slate .mes-kpi-icon { background: #eef2f7; color: #52647c; }
 
-.mes-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(310px, .8fr); gap: 12px; }
+.mes-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(310px, .65fr); gap: 12px; }
 .mes-panel { min-width: 0; overflow: hidden; border: 1px solid var(--mes-line); border-radius: 9px; background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .035); }
 .mes-panel-header { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: 14px; padding: 0 14px; border-bottom: 1px solid var(--mes-line); background: #fbfcfe; }
 .mes-panel-header > div { display: flex; align-items: center; gap: 8px; }
 .mes-panel-header h2 { margin: 0; color: #253650; font-size: 11.5px; font-weight: 830; }
 .mes-panel-header .material-symbols-rounded { color: var(--mes-blue); font-size: 18px; }
 .mes-panel-header a { color: var(--mes-blue); font-size: 9px; font-weight: 780; text-decoration: none; }
-.mes-panel-orders { grid-row: span 1; }
+.mes-panel-hint { color: #8794a6; font-size: 8px; font-weight: 720; }
+.mes-panel-orders, .mes-panel-process { grid-column: 1 / -1; }
 
 .mes-table-wrap { max-width: 100%; overflow-x: auto; }
 .mes-table { width: 100%; border-collapse: collapse; color: #44546b; font-size: 9.5px; }
@@ -114,6 +115,7 @@
 .mes-status { display: inline-flex; min-height: 24px; align-items: center; justify-content: center; padding: 0 8px; border: 1px solid #d3dce7; border-radius: 5px; background: #f7f9fb; color: #66758a; font-size: 7.5px; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
 .mes-status.is-progress { border-color: #fed2ad; background: #fff7ed; color: #c65d13; }
 .mes-status.is-complete { border-color: #b9ead8; background: #ecfdf5; color: #087f5b; }
+.mes-status.is-danger { border-color: #fecaca; background: #fff1f2; color: #be123c; }
 
 .mes-process-list { padding: 8px 13px 11px; }
 .mes-process-list article { padding: 8px 0; border-bottom: 1px solid #edf1f5; }
@@ -123,6 +125,14 @@
 .mes-process-list article > div:first-child span { color: #8a97a8; font-size: 8px; }
 .mes-process-progress { display: grid; grid-template-columns: 1fr 36px; align-items: center; gap: 8px; }
 .mes-process-progress strong { color: #53637a; font-size: 8.5px; text-align: right; }
+.mes-process-matrix-wrap { max-height: 330px; }
+.mes-process-matrix { min-width: 940px; }
+.mes-process-matrix th:not(:first-child), .mes-process-matrix td:not(:first-child) { text-align: center; }
+.mes-process-matrix td:first-child { min-width: 118px; }
+.mes-progress-cell.is-compact { min-width: 74px; }
+.mes-progress-cell.is-compact > span { font-size: 8px; text-align: center; }
+.mes-progress-cell.is-compact i { height: 4px; }
+.mes-danger-value { color: #c9233d; font-weight: 850; }
 
 .mes-panel-supply, .mes-panel-alerts { min-height: 245px; }
 .mes-alert-list { padding: 7px 13px 12px; }
@@ -158,15 +168,15 @@
 .warehouse-v3-toolbar-actions { display: flex; align-items: center; gap: 8px; }
 .warehouse-v3-toolbar .tsm-button { min-height: 36px; border-radius: 7px; font-size: 10px; }
 .warehouse-v3-toolbar .material-symbols-rounded { font-size: 17px; }
-.warehouse-context-bar { display: grid; grid-template-columns: 1.05fr 1.2fr minmax(260px, 4fr) 1fr; min-height: 66px; margin-bottom: 10px; overflow: hidden; border: 1px solid var(--mes-line); border-radius: var(--warehouse-radius); background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .04); }
+.warehouse-context-bar { display: grid; grid-template-columns: 1.05fr 1.2fr minmax(260px, 3.5fr) .85fr .85fr; min-height: 66px; margin-bottom: 10px; overflow: hidden; border: 1px solid var(--mes-line); border-radius: var(--warehouse-radius); background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .04); }
 .warehouse-context-cell { display: flex; min-width: 0; justify-content: center; flex-direction: column; padding: 10px 13px; border-right: 1px solid #e5eaf1; }
 .warehouse-context-cell:last-child { border-right: 0; }
 .warehouse-context-cell span { color: #8794a7; font-size: 7.5px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
 .warehouse-context-cell strong { display: block; margin-top: 5px; overflow: hidden; color: #20314a; font-size: 11px; font-weight: 830; text-overflow: ellipsis; white-space: nowrap; }
 .warehouse-context-cell.is-ot strong { color: #1557c5; font-size: 18px; letter-spacing: -.02em; }
 .warehouse-context-cell.is-structure strong { font-size: 10px; }
-.warehouse-context-cell.is-operation strong { color: #53647b; font-size: 10px; }
-.warehouse-metrics { display: grid; grid-template-columns: 1.15fr repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.warehouse-context-cell.is-date strong { color: #53647b; font-size: 10px; }
+.warehouse-metrics { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
 .warehouse-metric { position: relative; display: flex; min-height: 72px; justify-content: center; flex-direction: column; padding: 11px 14px; overflow: hidden; border: 1px solid var(--mes-line); border-radius: var(--warehouse-radius); background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .035); }
 .warehouse-metric::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: transparent; content: ''; }
 .warehouse-metric span { color: #708097; font-size: 8px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
@@ -177,7 +187,10 @@
 .warehouse-metric.is-primary span, .warehouse-metric.is-primary small { color: #a8bbd8; }
 .warehouse-metric.is-primary strong { color: #fff; }
 .warehouse-metric.is-warning::before { background: #ee8a30; }
+.warehouse-metric.is-blue::before { background: #2875ef; }
 .warehouse-metric.is-success::before { background: #14a979; }
+.warehouse-metric.is-danger::before { background: #d94242; }
+.warehouse-metric.is-danger strong { color: #b4233b; }
 .warehouse-panel { border-radius: var(--warehouse-radius); }
 .warehouse-toolbar { display: flex; min-height: 62px; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 14px; border-bottom: 1px solid var(--mes-line); background: #fbfcfe; }
 .warehouse-toolbar h2 { margin: 3px 0 0; color: #263750; font-size: 12px; font-weight: 830; }
@@ -199,11 +212,13 @@
 .warehouse-table td:nth-child(4) { min-width: 280px; }
 .warehouse-table td:nth-child(7) { width: 160px; }
 .warehouse-table tr[data-supply-state="Pendiente"] { box-shadow: inset 3px 0 #cbd5e1; }
+.warehouse-table tr[data-supply-state="No comprado"] { box-shadow: inset 3px 0 #ef4444; background: #fffafb; }
 .warehouse-table tr[data-supply-state="En compra"] { box-shadow: inset 3px 0 #f59e0b; }
 .warehouse-table tr[data-supply-state="Comprado"] { box-shadow: inset 3px 0 #3b82f6; }
 .warehouse-table tr[data-supply-state="En almacén"] { box-shadow: inset 3px 0 #10b981; }
 .warehouse-table tr[data-supply-state="Despachado"] { box-shadow: inset 3px 0 #334155; }
 .warehouse-orders-table td:nth-child(2) { min-width: 300px; }
+.warehouse-danger-value { color: #c9233d; font-weight: 850; }
 .warehouse-open-order { display: inline-flex; min-height: 30px; align-items: center; padding: 0 11px; border: 1px solid #cad7e6; border-radius: 6px; background: #fff; color: #0f5bd8; font-size: 9px; font-weight: 800; text-decoration: none; white-space: nowrap; }
 .warehouse-open-order:hover { border-color: #8eb5f4; background: #f4f8ff; }
 .mes-category { display: inline-flex; padding: 4px 7px; border: 1px solid #ded5f3; border-radius: 4px; background: #faf7ff; color: #7450a8; font-size: 7.5px; font-weight: 850; text-transform: uppercase; }
@@ -260,7 +275,7 @@
     .mes-module-link small { display: none !important; }
     .mes-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .mes-dashboard-grid { grid-template-columns: 1fr; }
-    .warehouse-context-bar { grid-template-columns: 1fr 1fr 2fr 1fr; }
+    .warehouse-context-bar { grid-template-columns: 1fr 1fr 2fr 1fr 1fr; }
     .warehouse-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .warehouse-detail-tools { min-width: min(600px, 64vw); }
 }
@@ -276,7 +291,7 @@
     .warehouse-context-bar { grid-template-columns: 1fr 1fr; }
     .warehouse-context-cell { min-height: 58px; border-bottom: 1px solid #e5eaf1; }
     .warehouse-context-cell.is-structure { grid-column: 1 / -1; }
-    .warehouse-context-cell.is-operation { grid-column: 1 / -1; }
+    .warehouse-context-cell.is-date { grid-column: auto; }
     .warehouse-catalog-tools { width: 100%; min-width: 0; justify-content: space-between; }
     .warehouse-detail-tools { width: 100%; min-width: 0; flex-wrap: wrap; justify-content: stretch; }
     .warehouse-detail-tools .warehouse-order-search { width: 100%; }

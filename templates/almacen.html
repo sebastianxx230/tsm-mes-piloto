@@ -34,9 +34,13 @@
             <span>Estructura</span>
             <strong title="{{ selected_work_order.descripcion or 'Sin descripción' }}">{{ selected_work_order.descripcion or 'Sin descripción' }}</strong>
         </div>
-        <div class="warehouse-context-cell is-operation">
-            <span>Operación</span>
-            <strong>Abastecimiento</strong>
+        <div class="warehouse-context-cell is-date">
+            <span>Inicio</span>
+            <strong>{{ selected_work_order.fecha_iniciado.strftime('%d/%m/%Y') if selected_work_order.fecha_iniciado else 'Sin fecha' }}</strong>
+        </div>
+        <div class="warehouse-context-cell is-date">
+            <span>Término</span>
+            <strong>{{ selected_work_order.fecha_termino.strftime('%d/%m/%Y') if selected_work_order.fecha_termino else 'Sin fecha' }}</strong>
         </div>
     </section>
     {% endif %}
@@ -44,9 +48,11 @@
     <section class="warehouse-metrics" aria-label="Resumen de almacén">
         {% for key, label, value, detail, color in [
             ('requirements', 'Requerimientos', warehouse_kpis.requirements, 'Ítems importados', 'primary'),
-            ('pending', 'Pendientes / compra', warehouse_kpis.pending, 'Requieren gestión', 'warning'),
+            ('pending', 'Pendientes', warehouse_kpis.pending, 'Sin gestionar', 'warning'),
+            ('in-purchase', 'En compra', warehouse_kpis.in_purchase, 'Compra en curso', 'blue'),
             ('purchased', 'Comprados', warehouse_kpis.purchased, 'Pendientes de ingreso', 'neutral'),
             ('available', 'Disponibles', warehouse_kpis.available, 'En almacén', 'success'),
+            ('not-purchased', 'No comprados', warehouse_kpis.not_purchased, 'Requieren revisión', 'danger'),
             ('dispatched', 'Despachados', warehouse_kpis.dispatched, 'Salida registrada', 'neutral')
         ] %}
         <article class="warehouse-metric is-{{ color }}">
@@ -136,7 +142,7 @@
         {% if warehouse_orders %}
         <div class="mes-table-wrap">
             <table class="mes-table warehouse-orders-table">
-                <thead><tr><th>OT</th><th>Cliente / estructura</th><th>PL</th><th>Requerimientos</th><th>Pendientes</th><th>Disponibles</th><th>Despachados</th><th></th></tr></thead>
+                <thead><tr><th>OT</th><th>Cliente / estructura</th><th>PL</th><th>Requerimientos</th><th>Pendientes</th><th>En compra</th><th>Comprados</th><th>No comprados</th><th>Disponibles</th><th>Despachados</th><th></th></tr></thead>
                 <tbody>
                 {% for order in warehouse_orders %}
                 <tr class="warehouse-order-row" data-search="{{ order.ot }} {{ order.cliente }} {{ order.description }}">
@@ -145,6 +151,9 @@
                     <td>{{ order.packing_lists }}</td>
                     <td>{{ order.requirements }}</td>
                     <td>{{ order.pending }}</td>
+                    <td>{{ order.in_purchase }}</td>
+                    <td>{{ order.purchased }}</td>
+                    <td class="{{ 'warehouse-danger-value' if order.not_purchased else '' }}">{{ order.not_purchased }}</td>
                     <td>{{ order.available }}</td>
                     <td>{{ order.dispatched }}</td>
                     <td><a class="warehouse-open-order" href="{{ url_for('mes_bp.almacen', ot=order.ot_id) }}">Abrir OT</a></td>
@@ -202,5 +211,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/almacen.js') }}?v=2.2.0"></script>
+<script src="{{ url_for('static', filename='js/almacen.js') }}?v=2.3.0"></script>
 {% endblock %}

@@ -356,6 +356,12 @@ class PersonalProduccion(db.Model):
         default=utc_now,
         onupdate=utc_now,
     )
+    asignaciones_proceso = db.relationship(
+        'AsignacionPersonalProceso',
+        back_populates='personal',
+        lazy=True,
+        passive_deletes=True,
+    )
 
     def to_dict(self):
         return {
@@ -747,6 +753,13 @@ class AvanceElementoProceso(db.Model):
         onupdate=utc_now,
     )
     proceso = db.relationship('ProcesoProduccion', lazy='joined')
+    asignaciones_personal = db.relationship(
+        'AsignacionPersonalProceso',
+        back_populates='avance',
+        lazy=True,
+        cascade='all, delete-orphan',
+        passive_deletes=True,
+    )
 
     def to_dict(self):
         return {
@@ -764,4 +777,70 @@ class AvanceElementoProceso(db.Model):
                 if self.fecha_actualizacion
                 else None
             ),
+            'personal': [
+                assignment.personal.to_dict()
+                for assignment in self.asignaciones_personal
+                if assignment.personal is not None
+            ],
         }
+
+
+class AsignacionPersonalProceso(db.Model):
+    """Vincula personal con el avance concreto de una pieza y proceso."""
+
+    __tablename__ = 'asignaciones_personal_proceso'
+    __table_args__ = (
+        db.UniqueConstraint(
+            'avance_id',
+            'personal_id',
+            name='uq_asignacion_personal_avance',
+        ),
+        db.Index(
+            'ix_asignaciones_personal_personal_avance',
+            'personal_id',
+            'avance_id',
+        ),
+        db.Index(
+            'ix_asignaciones_personal_avance',
+            'avance_id',
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    avance_id = db.Column(
+        db.Integer,
+        db.ForeignKey('avance_elemento_proceso.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    personal_id = db.Column(
+        db.Integer,
+        db.ForeignKey('personal_produccion.id', ondelete='RESTRICT'),
+        nullable=False,
+    )
+    asignado_por_id = db.Column(
+        db.Integer,
+        db.ForeignKey('usuarios.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    fecha_creacion = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=utc_now,
+    )
+    fecha_actualizacion = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    avance = db.relationship(
+        'AvanceElementoProceso',
+        back_populates='asignaciones_personal',
+        lazy='joined',
+    )
+    personal = db.relationship(
+        'PersonalProduccion',
+        back_populates='asignaciones_proceso',
+        lazy='joined',
+    )

@@ -13,6 +13,7 @@ from utils.auth import permission_required
 
 from models.catalogo_ot import CatalogoOT
 from models.produccion import (
+    AsignacionPersonalProceso,
     AvanceElementoProceso,
     BitacoraOT,
     ComponenteOT,
@@ -168,6 +169,7 @@ DECIMAL_ITEM_FIELDS = {
 ALLOWED_SUPPLY_STATES = {
     'Pendiente',
     'No requerido',
+    'No comprado',
     'En compra',
     'Comprado',
     'En almacén',
@@ -478,6 +480,75 @@ def _canonicalize_personnel_assignments(raw_value):
             'La asignación de personal supera el máximo de 500 caracteres.'
         )
     return canonical
+
+
+def _personnel_assignment_segments(canonical_value):
+    """Devuelve pares proceso/persona desde el espejo de compatibilidad."""
+    assignments = []
+    for raw_segment in str(canonical_value or '').split('|'):
+        segment = raw_segment.strip()
+        if not segment:
+            continue
+        if ':' in segment:
+            process_key, raw_names = segment.split(':', 1)
+            process_key = process_key.strip().lower()
+        else:
+            process_key, raw_names = 'general', segment
+        for raw_name in raw_names.split(','):
+            name = raw_name.strip()
+            if name:
+                assignments.append((process_key, name))
+    return assignments
+
+
+def _sync_personnel_assignments(component, canonical_value, user_id):
+    """Sincroniza el texto V1 con la relación normalizada pieza/proceso/persona."""
+    progress_rows = AvanceElementoProceso.query.filter_by(
+        componente_id=component.id,
+    ).all()
+    progress_by_code = {
+        row.proceso.codigo: row
+        for row in progress_rows
+        if row.proceso is not None
+    }
+    progress_ids = [row.id for row in progress_rows]
+    if progress_ids:
+        AsignacionPersonalProceso.query.filter(
+            AsignacionPersonalProceso.avance_id.in_(progress_ids)
+        ).delete(synchronize_session=False)
+
+    seen = set()
+    for process_key, name in _personnel_assignment_segments(canonical_value):
+        progress = progress_by_code.get(process_key)
+        if progress is None:
+            process = ProcesoProduccion.query.filter_by(
+                codigo=process_key,
+                activo=True,
+            ).one_or_none()
+            if process is None:
+                # Los valores generales V1 se conservan solo en el espejo.
+                continue
+            progress = AvanceElementoProceso(
+                componente_id=component.id,
+                proceso_id=process.id,
+                orden=process.orden,
+                aplica=process_key in _component_process_sequence(component),
+                cantidad_completada=None,
+                actualizado_por_id=user_id,
+            )
+            db.session.add(progress)
+            db.session.flush()
+            progress_by_code[process_key] = progress
+        person = _get_or_create_personnel(name)
+        assignment_key = (progress.id, person.id)
+        if assignment_key in seen:
+            continue
+        seen.add(assignment_key)
+        db.session.add(AsignacionPersonalProceso(
+            avance_id=progress.id,
+            personal_id=person.id,
+            asignado_por_id=user_id,
+        ))
 
 
 def _packing_list_name(value):
@@ -1674,6 +1745,14 @@ def importar_excel():
                 current_user.id,
             ))
         db.session.add_all(normalized_rows)
+        db.session.flush()
+        for component in new_components:
+            if component.operario:
+                _sync_personnel_assignments(
+                    component,
+                    component.operario,
+                    current_user.id,
+                )
 
         if has_real_period:
             packing_list.fecha_inicio_real = real_start
@@ -1879,6 +1958,13 @@ def actualizar_celda():
             current_user.id,
         ) if field_name in PROCESS_FIELDS else {}
         if previous_value == validated_value and not adjusted_fields:
+            if field_name == 'operario':
+                _sync_personnel_assignments(
+                    component,
+                    validated_value,
+                    current_user.id,
+                )
+                db.session.commit()
             response_payload = {
                 'success': True,
                 'version': packing_list.version,
@@ -1895,6 +1981,12 @@ def actualizar_celda():
             validated_value,
             current_user.id,
         )
+        if field_name == 'operario':
+            _sync_personnel_assignments(
+                component,
+                validated_value,
+                current_user.id,
+            )
         packing_list.incrementar_version()
         previous_text = str(
             previous_value if previous_value is not None else 'vacío'

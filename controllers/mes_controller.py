@@ -53,6 +53,7 @@ _dashboard_cache = {}
 SUPPLY_STATES = (
     'Pendiente',
     'No requerido',
+    'No comprado',
     'En compra',
     'Comprado',
     'En almacén',
@@ -140,6 +141,10 @@ def _is_finished_state(value):
     }
 
 
+def _is_in_progress_state(value):
+    return _normalized_state(value) == 'en proceso'
+
+
 def _component_weight(component):
     total = _as_float(component.peso_total_kg)
     if total > 0:
@@ -195,24 +200,24 @@ def _component_progress(component, work_order):
         if weight <= 0:
             continue
         ratio = clamped_ratio(row.cantidad_completada, component.cantidad)
+        available += weight
         if ratio is None:
             continue
         weighted += ratio * weight
-        available += weight
     return (weighted / available * 100.0) if available else 0.0
 
 
-def _production_snapshot(*, active_only=False):
+def _production_snapshot(*, in_progress_only=False):
     work_orders = (
         CatalogoOT.query.filter_by(archivado=False)
         .order_by(CatalogoOT.item.desc())
         .all()
     )
-    if active_only:
+    if in_progress_only:
         work_orders = [
             work_order
             for work_order in work_orders
-            if not _is_finished_state(work_order.estado)
+            if _is_in_progress_state(work_order.estado)
         ]
     work_order_by_id = {work_order.item: work_order for work_order in work_orders}
 
@@ -245,6 +250,9 @@ def _production_snapshot(*, active_only=False):
         'supply_items': 0,
         'routes': set(),
         'sites': set(),
+        'processes': defaultdict(
+            lambda: {'total_kg': 0.0, 'advanced_kg': 0.0}
+        ),
     })
     process_metrics = defaultdict(lambda: {'total_kg': 0.0, 'advanced_kg': 0.0})
     supplies = []
@@ -294,10 +302,11 @@ def _production_snapshot(*, active_only=False):
 
             ratios = _process_ratios(component)
             for process_code, ratio in ratios.items():
-                if ratio is None:
-                    continue
                 process_metrics[process_code]['total_kg'] += weight
-                process_metrics[process_code]['advanced_kg'] += weight * ratio
+                metrics['processes'][process_code]['total_kg'] += weight
+                if ratio is not None:
+                    process_metrics[process_code]['advanced_kg'] += weight * ratio
+                    metrics['processes'][process_code]['advanced_kg'] += weight * ratio
 
             release_ratio = ratios.get('lib') or 0.0
             galvanizing_ratio = ratios.get('gal') or 0.0
@@ -309,6 +318,19 @@ def _production_snapshot(*, active_only=False):
         metrics = ot_metrics[work_order.item]
         weight = metrics['weight_kg']
         advanced = metrics['advanced_kg']
+        process_progress = []
+        for code, label, _field, _weight, _color in PROCESS_DEFINITIONS:
+            values = metrics['processes'][code]
+            process_total = values['total_kg']
+            if process_total <= 0:
+                continue
+            process_progress.append({
+                'code': code,
+                'name': label,
+                'progress': (
+                    values['advanced_kg'] / process_total * 100.0
+                ),
+            })
         summaries.append({
             'id': work_order.item,
             'ot': work_order.ot,
@@ -325,6 +347,7 @@ def _production_snapshot(*, active_only=False):
             'fabrication_items': metrics['fabrication_items'],
             'supply_items': metrics['supply_items'],
             'routes': sorted(metrics['routes']),
+            'processes': process_progress,
         })
 
     process_catalog = {
@@ -360,7 +383,7 @@ def _production_snapshot(*, active_only=False):
 def _dashboard_context(snapshot):
     today = date.today()
     summaries = snapshot['work_order_summaries']
-    active = [row for row in summaries if not _is_finished_state(row['state'])]
+    active = [row for row in summaries if _is_in_progress_state(row['state'])]
     active_with_production = [row for row in active if row['weight_kg'] > 0]
     total_weight = sum(row['weight_kg'] for row in active_with_production)
     advanced_weight = sum(row['advanced_kg'] for row in active_with_production)
@@ -368,9 +391,41 @@ def _dashboard_context(snapshot):
         row for row in active
         if row['end'] is not None and row['end'] < today
     ]
+    supplies_by_ot = {}
+    for item in snapshot['supplies']:
+        supply = supplies_by_ot.setdefault(item['ot_id'], {
+            'ot_id': item['ot_id'],
+            'ot': item['ot'],
+            'cliente': item['cliente'],
+            'requirements': 0,
+            'quantity': 0.0,
+            'pending': 0,
+            'in_purchase': 0,
+            'purchased': 0,
+            'available': 0,
+            'not_purchased': 0,
+            'dispatched': 0,
+        })
+        supply['requirements'] += 1
+        supply['quantity'] += item['quantity']
+        state = item['state']
+        if state == 'Pendiente':
+            supply['pending'] += 1
+        elif state == 'En compra':
+            supply['in_purchase'] += 1
+        elif state == 'Comprado':
+            supply['purchased'] += 1
+        elif state == 'En almacén':
+            supply['available'] += 1
+        elif state == 'No comprado':
+            supply['not_purchased'] += 1
+        elif state == 'Despachado':
+            supply['dispatched'] += 1
+            supply['available'] += 1
+
     supply_pending = sum(
-        item['state'] in {'Pendiente', 'En compra'}
-        for item in snapshot['supplies']
+        row['pending'] + row['in_purchase']
+        for row in supplies_by_ot.values()
     )
 
     alerts = []
@@ -380,6 +435,17 @@ def _dashboard_context(snapshot):
             'title': f"{row['ot']} fuera de fecha",
             'detail': f"Término registrado: {row['end'].strftime('%d/%m/%Y')}",
         })
+    for item in (
+        item for item in snapshot['supplies']
+        if item['state'] == 'No comprado'
+    ):
+        alerts.append({
+            'level': 'high',
+            'title': f"{item['ot']}: material no comprado",
+            'detail': f"{item['code']} · {item['description']}",
+        })
+        if sum(alert['level'] == 'high' for alert in alerts) >= 4:
+            break
     if snapshot['pending_galvanizing_kg'] > 0:
         alerts.append({
             'level': 'medium',
@@ -412,10 +478,10 @@ def _dashboard_context(snapshot):
             'pending_galvanizing_kg': snapshot['pending_galvanizing_kg'],
             'dispatched_kg': snapshot['dispatched_kg'],
         },
-        'orders': active[:6],
-        'processes': snapshot['processes'],
-        'supplies': snapshot['supplies'][:6],
-        'alerts': alerts[:6],
+        'orders': active[:12],
+        'processes': active[:12],
+        'supplies': list(supplies_by_ot.values())[:12],
+        'alerts': alerts[:8],
     }
 
 
@@ -430,7 +496,7 @@ def _dashboard_catalog_summary():
     active = [
         work_order
         for work_order in work_orders
-        if not _is_finished_state(work_order.estado)
+        if _is_in_progress_state(work_order.estado)
     ]
     delayed = [
         work_order
@@ -468,8 +534,29 @@ def _dashboard_operations_payload(dashboard):
             }
             for row in dashboard['orders']
         ],
-        'processes': dashboard['processes'],
-        'supplies': dashboard['supplies'],
+        'processes': [
+            {
+                'ot': row['ot'],
+                'cliente': row['cliente'],
+                'progress': row['progress'],
+                'processes': row['processes'],
+                'production_url': url_for(
+                    'gestion_ot_bp.produccion',
+                    id=row['id'],
+                ),
+            }
+            for row in dashboard['processes']
+        ],
+        'supplies': [
+            {
+                **row,
+                'warehouse_url': url_for(
+                    'mes_bp.almacen',
+                    ot=row['ot_id'],
+                ),
+            }
+            for row in dashboard['supplies']
+        ],
         'alerts': dashboard['alerts'],
     }
 
@@ -493,7 +580,7 @@ def _cached_dashboard_value(key, builder):
 
 
 def _build_dashboard_operations_payload():
-    snapshot = _production_snapshot(active_only=True)
+    snapshot = _production_snapshot(in_progress_only=True)
     return _dashboard_operations_payload(_dashboard_context(snapshot))
 
 
@@ -514,13 +601,21 @@ def _warehouse_orders():
             func.count(ComponenteOT.id).label('requirements'),
             func.count(func.distinct(PackingList.id)).label('packing_lists'),
             func.sum(case(
-                (state.in_(('Pendiente', 'En compra')), 1),
+                (state == 'Pendiente', 1),
                 else_=0,
             )).label('pending'),
+            func.sum(case(
+                (state == 'En compra', 1),
+                else_=0,
+            )).label('in_purchase'),
             func.sum(case(
                 (state == 'Comprado', 1),
                 else_=0,
             )).label('purchased'),
+            func.sum(case(
+                (state == 'No comprado', 1),
+                else_=0,
+            )).label('not_purchased'),
             func.sum(case(
                 (state.in_(('En almacén', 'Despachado')), 1),
                 else_=0,
@@ -554,7 +649,9 @@ def _warehouse_orders():
             'requirements': int(row.requirements or 0),
             'packing_lists': int(row.packing_lists or 0),
             'pending': int(row.pending or 0),
+            'in_purchase': int(row.in_purchase or 0),
             'purchased': int(row.purchased or 0),
+            'not_purchased': int(row.not_purchased or 0),
             'available': int(row.available or 0),
             'dispatched': int(row.dispatched or 0),
         }
@@ -616,8 +713,10 @@ def _warehouse_supplies(work_order, selected_state=''):
 def _warehouse_kpis(rows):
     return {
         'requirements': sum(int(row.get('requirements', 1)) for row in rows),
-        'pending': sum(int(row.get('pending', row.get('state') in {'Pendiente', 'En compra'})) for row in rows),
+        'pending': sum(int(row.get('pending', row.get('state') == 'Pendiente')) for row in rows),
+        'in_purchase': sum(int(row.get('in_purchase', row.get('state') == 'En compra')) for row in rows),
         'purchased': sum(int(row.get('purchased', row.get('state') == 'Comprado')) for row in rows),
+        'not_purchased': sum(int(row.get('not_purchased', row.get('state') == 'No comprado')) for row in rows),
         'available': sum(int(row.get('available', row.get('state') in {'En almacén', 'Despachado'})) for row in rows),
         'dispatched': sum(int(row.get('dispatched', row.get('state') == 'Despachado')) for row in rows),
     }

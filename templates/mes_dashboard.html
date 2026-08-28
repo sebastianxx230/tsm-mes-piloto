@@ -11,7 +11,7 @@
 
     <section class="mes-kpi-grid" aria-label="Indicadores principales" aria-busy="true">
         {% for key, icon, label, description, color in [
-            ('active-orders', 'assignment', 'OT activas', 'En proceso o pendientes', 'blue'),
+            ('active-orders', 'assignment', 'OT en proceso', 'Órdenes actualmente en fabricación', 'blue'),
             ('physical-progress', 'monitoring', 'Avance físico', 'kg equivalentes', 'green'),
             ('delayed-orders', 'schedule', 'OT fuera de fecha', 'Según fecha de término', 'red'),
             ('pending-galvanizing', 'water_drop', 'Pendiente galvanizado', 'kg liberados aún no galvanizados', 'orange'),
@@ -31,12 +31,12 @@
         </section>
 
         <section class="mes-panel mes-panel-process">
-            <header class="mes-panel-header"><div><span class="mes-section-mark"></span><h2>Avance por proceso</h2></div></header>
+            <header class="mes-panel-header"><div><span class="mes-section-mark"></span><h2>Avance por proceso y OT</h2></div><span class="mes-panel-hint">Solo órdenes en proceso</span></header>
             <div id="dashboard-processes" class="mes-panel-loading" aria-busy="true"><span class="mes-panel-loading-label">Cargando procesos…</span><span class="mes-skeleton-line"></span><span class="mes-skeleton-line is-wide"></span><span class="mes-skeleton-line is-medium"></span></div>
         </section>
 
         <section class="mes-panel mes-panel-supply">
-            <header class="mes-panel-header"><div><span class="mes-section-mark"></span><h2>Abastecimiento importado</h2></div><a href="{{ url_for('mes_bp.almacen') }}">Abrir almacén <span>→</span></a></header>
+            <header class="mes-panel-header"><div><span class="mes-section-mark"></span><h2>Abastecimiento por OT</h2></div><a href="{{ url_for('mes_bp.almacen') }}">Abrir almacén <span>→</span></a></header>
             <div id="dashboard-supplies" class="mes-panel-loading" aria-busy="true"><span class="mes-panel-loading-label">Cargando abastecimiento…</span><span class="mes-skeleton-line is-wide"></span><span class="mes-skeleton-line is-medium"></span></div>
         </section>
 
@@ -53,4 +53,4 @@
 </div>
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', filename='js/mes_dashboard.js') }}?v=2.1.0"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/mes_dashboard.js') }}?v=3.0.0"></script>{% endblock %}

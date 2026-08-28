@@ -1,4 +1,4 @@
--- RECONSTRUCCIÓN DESTRUCTIVA DEL PILOTO MES V2
+-- RECONSTRUCCIÓN DESTRUCTIVA DEL PILOTO MES V3
 -- Conserva public.catalogo_ot y public.usuarios, incluidas sus secuencias.
 -- Elimina únicamente datos operativos, archivos y configuración derivada.
 -- Ejecutar UNA sola vez en Neon SQL Editor con la aplicación detenida.
@@ -22,7 +22,10 @@ SELECT COUNT(*)::bigint AS total FROM public.catalogo_ot;
 CREATE TEMP TABLE _usuarios_guard AS
 SELECT COUNT(*)::bigint AS total FROM public.usuarios;
 
+DROP VIEW IF EXISTS public.vw_ot_personal_produccion;
+
 DROP TABLE IF EXISTS
+    public.asignaciones_personal_proceso,
     public.avance_elemento_proceso,
     public.produccion_avances,
     public.componentes_ot,
@@ -56,6 +59,21 @@ ALTER TABLE public.usuarios
     ALTER COLUMN activo SET DEFAULT true,
     ALTER COLUMN activo SET NOT NULL,
     ALTER COLUMN nombre SET NOT NULL;
+
+ALTER TABLE public.catalogo_ot
+    DROP CONSTRAINT IF EXISTS ck_catalogo_ot_periodo_programado;
+
+-- Los registros históricos sin fecha de término se conservan usando su fecha
+-- de inicio como valor mínimo válido. Desde V3 toda OT exige ambas fechas.
+UPDATE public.catalogo_ot
+SET fecha_termino = fecha_iniciado
+WHERE fecha_termino IS NULL;
+
+ALTER TABLE public.catalogo_ot
+    ADD CONSTRAINT ck_catalogo_ot_periodo_programado CHECK (
+        fecha_termino >= fecha_iniciado
+    ),
+    ALTER COLUMN fecha_termino SET NOT NULL;
 
 CREATE TABLE public.roles_sistema (
     id serial PRIMARY KEY,
@@ -169,7 +187,12 @@ CREATE TABLE public.componentes_ot (
     ruta_id integer REFERENCES public.rutas_produccion(id) ON DELETE SET NULL,
     importacion_id integer REFERENCES public.importaciones_packing_list(id) ON DELETE SET NULL,
     tipo varchar(20) NOT NULL DEFAULT 'fabricacion',
-    estado_suministro varchar(30) NOT NULL DEFAULT 'Pendiente',
+    estado_suministro varchar(30) NOT NULL DEFAULT 'Pendiente' CHECK (
+        estado_suministro IN (
+            'Pendiente', 'No requerido', 'No comprado', 'En compra',
+            'Comprado', 'En almacén', 'Despachado'
+        )
+    ),
     operario varchar(500) NOT NULL DEFAULT '',
     fecha_realizacion date,
     fecha_inicio_real date,
@@ -211,6 +234,16 @@ CREATE TABLE public.personal_produccion (
     activo boolean NOT NULL DEFAULT true,
     fecha_creacion timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE public.asignaciones_personal_proceso (
+    id serial PRIMARY KEY,
+    avance_id integer NOT NULL REFERENCES public.avance_elemento_proceso(id) ON DELETE CASCADE,
+    personal_id integer NOT NULL REFERENCES public.personal_produccion(id) ON DELETE RESTRICT,
+    asignado_por_id integer REFERENCES public.usuarios(id) ON DELETE SET NULL,
+    fecha_creacion timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_asignacion_personal_avance UNIQUE (avance_id, personal_id)
 );
 
 CREATE TABLE public.bitacora_ot (
@@ -273,6 +306,8 @@ CREATE INDEX ix_componentes_ot_periodo_real ON public.componentes_ot(fecha_inici
 CREATE INDEX ix_componentes_ot_categoria_estado ON public.componentes_ot(categoria, estado_suministro);
 CREATE INDEX ix_avance_elemento_componente_orden ON public.avance_elemento_proceso(componente_id, orden);
 CREATE INDEX ix_personal_produccion_activo_nombre ON public.personal_produccion(activo, nombre);
+CREATE INDEX ix_asignaciones_personal_avance ON public.asignaciones_personal_proceso(avance_id);
+CREATE INDEX ix_asignaciones_personal_personal_avance ON public.asignaciones_personal_proceso(personal_id, avance_id);
 CREATE INDEX ix_bitacora_ot_ot_fecha ON public.bitacora_ot(ot_id, fecha_creacion);
 CREATE INDEX ix_movimientos_almacen_ot_fecha ON public.movimientos_almacen(ot_id, fecha_creacion);
 CREATE INDEX ix_movimientos_almacen_componente_fecha ON public.movimientos_almacen(componente_id, fecha_creacion);
@@ -368,10 +403,47 @@ SELECT r.id, p.id, s.step_order FROM route_steps s
 JOIN public.rutas_produccion r ON r.codigo = s.route_code
 JOIN public.procesos_produccion p ON p.codigo = s.process_code;
 
+CREATE VIEW public.vw_ot_personal_produccion AS
+SELECT
+    ot.item AS ot_id,
+    ot.ot,
+    ot.cliente,
+    ot.fecha_iniciado AS fecha_inicio_ot,
+    ot.fecha_termino AS fecha_termino_ot,
+    pl.id AS packing_list_id,
+    pl.nombre AS packing_list,
+    pl.site,
+    componente.id AS componente_id,
+    componente.marca AS codigo_elemento,
+    componente.descripcion AS elemento,
+    componente.cantidad AS cantidad_elemento,
+    proceso.id AS proceso_id,
+    proceso.codigo AS proceso_codigo,
+    proceso.nombre AS proceso,
+    avance.orden AS orden_proceso,
+    avance.aplica,
+    avance.cantidad_completada,
+    avance.fecha_inicio,
+    avance.fecha_fin AS fecha_termino,
+    personal.id AS personal_id,
+    personal.nombre AS personal,
+    personal.activo AS personal_activo,
+    asignacion.asignado_por_id,
+    asignacion.fecha_creacion AS fecha_asignacion,
+    asignacion.fecha_actualizacion
+FROM public.asignaciones_personal_proceso asignacion
+JOIN public.avance_elemento_proceso avance ON avance.id = asignacion.avance_id
+JOIN public.personal_produccion personal ON personal.id = asignacion.personal_id
+JOIN public.procesos_produccion proceso ON proceso.id = avance.proceso_id
+JOIN public.componentes_ot componente ON componente.id = avance.componente_id
+JOIN public.packing_lists pl ON pl.id = componente.pl_id
+JOIN public.catalogo_ot ot ON ot.item = pl.ot_id
+WHERE pl.archivado = false;
+
 CREATE TABLE public.alembic_version (
     version_num varchar(32) PRIMARY KEY
 );
-INSERT INTO public.alembic_version(version_num) VALUES ('20260824_0017');
+INSERT INTO public.alembic_version(version_num) VALUES ('20260828_0018');
 
 DO $$
 DECLARE expected_count bigint;

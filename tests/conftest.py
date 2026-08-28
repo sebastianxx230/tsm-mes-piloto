@@ -58,6 +58,7 @@ def app():
             ot='2026-TEST',
             cliente='Cliente de prueba',
             fecha_iniciado=date(2026, 7, 30),
+            fecha_termino=date(2026, 9, 30),
             descripcion='OT para pruebas de seguridad',
             estado='En Proceso',
         )

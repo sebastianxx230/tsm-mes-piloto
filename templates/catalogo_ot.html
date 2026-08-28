@@ -175,13 +175,15 @@
     
     <div class="catalog-desktop-table mb-4 hidden overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm lg:block">
         <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse min-w-[1100px]">
+            <table class="w-full text-left border-collapse min-w-[1280px]">
                 <thead class="border-b border-slate-300 bg-slate-100">
                 <tr>
                     <th class="px-4 py-3 w-[110px] text-[10px] font-extrabold text-slate-700 uppercase tracking-widest text-center">N° OT</th>
                     <th class="px-4 py-3 w-[180px] text-[10px] font-extrabold text-slate-700 uppercase tracking-widest text-center">Cliente</th>
                     <th class="px-4 py-3 text-[10px] font-extrabold text-slate-700 uppercase tracking-widest text-center">Estructura / Descripción</th>
                     <th class="px-4 py-3 w-[110px] text-[10px] font-extrabold text-slate-700 uppercase tracking-widest text-center">Inicio</th>
+                    <th class="px-4 py-3 w-[110px] text-[10px] font-extrabold text-slate-700 uppercase tracking-widest text-center">Término</th>
+                    <th class="px-4 py-3 w-[90px] text-[10px] font-extrabold text-slate-700 uppercase tracking-widest text-center">Avance</th>
                     <th class="px-6 py-3 w-[140px] text-[10px] font-extrabold text-slate-700 uppercase tracking-widest text-center">Estado</th>
                     <th class="px-4 py-3 w-[140px] text-[10px] font-extrabold text-slate-700 uppercase tracking-widest text-center">Acciones</th>
                 </tr>
@@ -199,6 +201,8 @@
                         <div class="line-clamp-2">{{ ot.descripcion }}</div>
                     </td>
                     <td class="px-4 py-2 align-middle font-medium text-slate-500 whitespace-nowrap">{{ ot.fecha_iniciado }}</td>
+                    <td class="px-4 py-2 align-middle text-center font-medium text-slate-500 whitespace-nowrap">{{ ot.fecha_termino }}</td>
+                    <td class="px-4 py-2 align-middle text-center font-extrabold text-slate-800 whitespace-nowrap">{{ '{:g}'.format(ot.progress) }}%</td>
 
                     <td class="px-6 py-2 align-middle text-center">
                         {% set badge_class = 'bg-orange-50 text-orange-700 border-orange-200' if 'proceso' in st else 'bg-emerald-50 text-emerald-700 border-emerald-200' if 'terminado' in st else 'bg-slate-50 text-slate-600 border-slate-200' %}
@@ -244,7 +248,7 @@
                 </tr>
                 {% endfor %}
                 <tr id="emptyStateRow" style="display: none;">
-                    <td colspan="6" class="text-center py-12 bg-white">
+                    <td colspan="8" class="text-center py-12 bg-white">
                         <div class="flex flex-col items-center justify-center">
                             <span class="material-symbols-rounded text-[32px] mb-2 text-slate-300">find_in_page</span>
                             <p class="text-[13px] font-semibold text-slate-500">No se encontraron resultados en el registro</p>
@@ -278,10 +282,19 @@
                 <h3 class="font-bold text-[13px] text-slate-800 mb-1.5 leading-tight pr-2">{{ ot.cliente }}</h3>
                 <p class="text-[12px] text-slate-500 line-clamp-2 leading-snug mb-4 pr-2">{{ ot.descripcion }}</p>
 
-                <div class="flex items-center pt-3 border-t border-slate-100 mt-auto mb-2">
-                    <div class="flex items-center gap-1.5 text-slate-400">
+                <div class="grid grid-cols-3 gap-3 pt-3 border-t border-slate-100 mt-auto mb-2">
+                    <div class="flex flex-col gap-1 text-slate-400">
+                        <small class="text-[8px] font-bold uppercase tracking-wider">Inicio</small>
                         <span class="material-symbols-rounded text-[15px]">calendar_today</span>
                         <span class="text-[11px] font-semibold tracking-wide">{{ ot.fecha_iniciado }}</span>
+                    </div>
+                    <div class="flex flex-col gap-1 text-slate-400">
+                        <small class="text-[8px] font-bold uppercase tracking-wider">Término</small>
+                        <span class="text-[11px] font-semibold tracking-wide">{{ ot.fecha_termino }}</span>
+                    </div>
+                    <div class="flex flex-col gap-1 text-slate-500 text-right">
+                        <small class="text-[8px] font-bold uppercase tracking-wider">Avance</small>
+                        <strong class="text-[13px] text-slate-800">{{ '{:g}'.format(ot.progress) }}%</strong>
                     </div>
                 </div>
 
@@ -369,11 +382,17 @@
                 <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Estructura / Descripción</label>
                 <textarea name="descripcion" id="inputDesc" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-sm text-[12px] font-semibold text-slate-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all resize-none"></textarea>
             </div>
-            <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
                     <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Fecha Inicio</label>
                     <input type="date" name="fecha_iniciado" id="inputFecha" class="w-full h-9 px-3 border border-slate-300 rounded-sm text-[12px] font-semibold text-slate-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all" required>
                 </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Fecha Término</label>
+                    <input type="date" name="fecha_termino" id="inputFechaTermino" class="w-full h-9 px-3 border border-slate-300 rounded-sm text-[12px] font-semibold text-slate-900 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all" required>
+                </div>
+            </div>
+            <div class="mb-6">
                 <div>
                     <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Estado Operativo</label>
                     <div class="relative">
@@ -394,5 +413,5 @@
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/catalogo.js') }}?v=3.3.0"></script>
+<script src="{{ url_for('static', filename='js/catalogo.js') }}?v=3.4.0"></script>
 {% endblock %}

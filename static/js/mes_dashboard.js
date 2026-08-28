@@ -53,6 +53,7 @@
         const normalized = valueText(value, '').trim().toLocaleLowerCase('es');
         if (['terminado', 'terminada', 'completado', 'completada'].includes(normalized)) return 'is-complete';
         if (normalized === 'en proceso') return 'is-progress';
+        if (normalized === 'no comprado') return 'is-danger';
         return '';
     }
 
@@ -109,29 +110,72 @@
 
     function renderProcesses(processes) {
         const host = document.getElementById('dashboard-processes');
-        host.className = 'mes-process-list';
+        host.className = '';
         host.setAttribute('aria-busy', 'false');
         host.replaceChildren();
         if (!processes.length) {
-            host.className = '';
-            host.append(emptyState('Sin avances por proceso', 'Los indicadores aparecerán después de importar y registrar producción.'));
+            host.append(emptyState('Sin OTs en proceso', 'Cuando una orden entre a fabricación aparecerá aquí con el porcentaje de cada proceso.'));
             return;
         }
-        processes.forEach((process) => {
-            const progress = Math.min(Math.max(Number(process.progress) || 0, 0), 100);
-            const article = document.createElement('article');
-            const heading = document.createElement('div');
-            const name = document.createElement('strong');
-            name.textContent = valueText(process.name);
-            const weight = document.createElement('span');
-            weight.textContent = `${formatter.format(process.advanced_kg || 0)} / ${formatter.format(process.total_kg || 0)} kg`;
-            heading.append(name, weight);
-            const meter = document.createElement('div');
-            meter.className = 'mes-process-progress';
-            meter.innerHTML = `<i><b style="width:${progress}%"></b></i><strong>${formatter.format(progress)}%</strong>`;
-            article.append(heading, meter);
-            host.append(article);
+        const preferredOrder = ['hab', 'arm', 'sol', 'lim', 'lib', 'gal', 'are', 'pin', 'des'];
+        const labels = new Map();
+        processes.forEach((order) => (order.processes || []).forEach((process) => {
+            labels.set(process.code, process.name);
+        }));
+        const processCodes = preferredOrder.filter((code) => labels.has(code));
+        const wrap = document.createElement('div');
+        wrap.className = 'mes-table-wrap mes-process-matrix-wrap';
+        const table = document.createElement('table');
+        table.className = 'mes-table mes-process-matrix';
+        const head = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        ['OT', 'Avance OT', ...processCodes.map((code) => labels.get(code))].forEach((label) => {
+            const cell = document.createElement('th');
+            cell.textContent = label;
+            headerRow.append(cell);
         });
+        head.append(headerRow);
+        const body = document.createElement('tbody');
+        processes.forEach((order) => {
+            const row = document.createElement('tr');
+            const orderCell = document.createElement('td');
+            const link = document.createElement('a');
+            link.className = 'mes-table-link';
+            link.href = order.production_url;
+            link.textContent = valueText(order.ot);
+            const client = document.createElement('small');
+            client.textContent = valueText(order.cliente);
+            orderCell.append(link, client);
+            const overallCell = document.createElement('td');
+            overallCell.append(progressMeter(order.progress));
+            const processByCode = new Map((order.processes || []).map((process) => [process.code, process]));
+            row.append(orderCell, overallCell);
+            processCodes.forEach((code) => {
+                const cell = document.createElement('td');
+                const process = processByCode.get(code);
+                if (process) cell.append(progressMeter(process.progress, true));
+                else cell.textContent = '—';
+                row.append(cell);
+            });
+            body.append(row);
+        });
+        table.append(head, body);
+        wrap.append(table);
+        host.append(wrap);
+    }
+
+    function progressMeter(rawProgress, compact = false) {
+        const progress = Math.min(Math.max(Number(rawProgress) || 0, 0), 100);
+        const meter = document.createElement('div');
+        meter.className = compact ? 'mes-progress-cell is-compact' : 'mes-progress-cell';
+        const value = document.createElement('span');
+        value.textContent = `${formatter.format(progress)}%`;
+        const track = document.createElement('i');
+        const fill = document.createElement('b');
+        fill.style.width = `${progress}%`;
+        track.append(fill);
+        meter.append(value, track);
+        return meter;
     }
 
     function renderSupplies(items) {
@@ -147,20 +191,30 @@
         wrap.className = 'mes-table-wrap';
         const table = document.createElement('table');
         table.className = 'mes-table';
-        table.innerHTML = '<thead><tr><th>OT</th><th>Ítem</th><th>Requerido</th><th>Estado</th></tr></thead>';
+        table.innerHTML = '<thead><tr><th>OT</th><th>Ítems</th><th>Cantidad</th><th>Pendientes</th><th>En compra</th><th>Comprados</th><th>No comprados</th><th>Disponibles</th></tr></thead>';
         const body = document.createElement('tbody');
         items.forEach((item) => {
             const row = document.createElement('tr');
-            const ot = document.createElement('td'); ot.textContent = valueText(item.ot);
-            const detail = document.createElement('td');
-            const code = document.createElement('strong'); code.textContent = valueText(item.code);
-            const description = document.createElement('small'); description.textContent = valueText(item.description);
-            detail.append(code, description);
-            const quantity = document.createElement('td'); quantity.textContent = `${formatter.format(item.quantity || 0)} ${valueText(item.unit, 'UND')}`;
-            const state = document.createElement('td');
-            const badge = document.createElement('span'); badge.className = `mes-status ${statusClass(item.state)}`; badge.textContent = valueText(item.state, 'Pendiente');
-            state.append(badge);
-            row.append(ot, detail, quantity, state);
+            const ot = document.createElement('td');
+            const link = document.createElement('a'); link.className = 'mes-table-link'; link.href = item.warehouse_url; link.textContent = valueText(item.ot);
+            const client = document.createElement('small'); client.textContent = valueText(item.cliente);
+            ot.append(link, client);
+            const values = [
+                item.requirements,
+                item.quantity,
+                item.pending,
+                item.in_purchase,
+                item.purchased,
+                item.not_purchased,
+                item.available,
+            ];
+            row.append(ot);
+            values.forEach((value, index) => {
+                const cell = document.createElement('td');
+                cell.textContent = formatter.format(value || 0);
+                if (index === 5 && Number(value) > 0) cell.className = 'mes-danger-value';
+                row.append(cell);
+            });
             body.append(row);
         });
         table.append(body); wrap.append(table); host.append(wrap);

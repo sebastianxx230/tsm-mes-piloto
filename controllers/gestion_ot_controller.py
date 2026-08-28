@@ -14,7 +14,14 @@ from werkzeug.utils import secure_filename
 from utils.auth import permission_required
 from db_config import db
 from models.catalogo_ot import CatalogoOT
-from models.produccion import BitacoraOT, ComponenteOT, FotoSeguimiento, PackingList
+from models.produccion import (
+    AsignacionPersonalProceso,
+    AvanceElementoProceso,
+    BitacoraOT,
+    ComponenteOT,
+    FotoSeguimiento,
+    PackingList,
+)
 from utils.production_metrics import (
     PROCESS_DEFINITIONS,
     clamped_ratio,
@@ -89,6 +96,23 @@ def _validate_ot_payload(data):
     except ValueError as exc:
         raise ValueError('La fecha de inicio debe tener formato AAAA-MM-DD y ser válida.') from exc
 
+    fecha_termino_raw = _clean_text(
+        data.get('fecha_termino'),
+        'La fecha de término',
+        required=True,
+        max_length=10,
+    )
+    try:
+        fecha_termino = date.fromisoformat(fecha_termino_raw)
+    except ValueError as exc:
+        raise ValueError(
+            'La fecha de término debe tener formato AAAA-MM-DD y ser válida.'
+        ) from exc
+    if fecha_termino < fecha_iniciado:
+        raise ValueError(
+            'La fecha de término no puede ser anterior a la fecha de inicio.'
+        )
+
     estado = _clean_text(data.get('estado'), 'El estado', required=True, max_length=30)
     if estado not in ALLOWED_OT_STATES:
         raise ValueError('El estado indicado no está permitido.')
@@ -107,6 +131,7 @@ def _validate_ot_payload(data):
         'ot': ot_code,
         'cliente': cliente,
         'fecha_iniciado': fecha_iniciado,
+        'fecha_termino': fecha_termino,
         'descripcion': descripcion,
         'estado': estado,
         'expected_version': expected_version,
@@ -117,6 +142,7 @@ def _validate_ot_payload(data):
 def catalogo_ot():
     ots = []
     ots_db = []
+    progress_by_ot = {}
     today_lima = datetime.now(LIMA_TIMEZONE).date()
     try:
         ots_db = (
@@ -124,14 +150,30 @@ def catalogo_ot():
             .order_by(CatalogoOT.item.desc())
             .all()
         )
+        from controllers.mes_controller import (
+            _cached_dashboard_value,
+            _production_snapshot,
+        )
+        progress_by_ot = _cached_dashboard_value(
+            'catalog-progress',
+            lambda: {
+                row['id']: round(row['progress'], 1)
+                for row in _production_snapshot()['work_order_summaries']
+            },
+        )
+    except Exception:
+        current_app.logger.exception('catalog_progress_load_failed')
+
+    try:
         for ot in ots_db:
             ot_data = ot.to_dict()
+            ot_data['progress'] = progress_by_ot.get(ot.item, 0.0)
             ot_data['is_current_year'] = bool(
                 ot.fecha_iniciado and ot.fecha_iniciado.year == today_lima.year
             )
             ots.append(ot_data)
     except Exception:
-        current_app.logger.exception('catalog_load_failed')
+        current_app.logger.exception('catalog_serialization_failed')
 
     current_year_ots = [
         ot for ot in ots_db
@@ -177,6 +219,7 @@ def guardar_ot():
                 ot=data['ot'],
                 cliente=data['cliente'],
                 fecha_iniciado=data['fecha_iniciado'],
+                fecha_termino=data['fecha_termino'],
                 descripcion=data['descripcion'],
                 estado=data['estado'],
             )
@@ -200,6 +243,7 @@ def guardar_ot():
                     }), 409
                 ot_editar.cliente = data['cliente']
                 ot_editar.fecha_iniciado = data['fecha_iniciado']
+                ot_editar.fecha_termino = data['fecha_termino']
                 ot_editar.descripcion = data['descripcion']
                 ot_editar.estado = data['estado']
                 ot_editar.incrementar_version()
@@ -299,15 +343,17 @@ def actualizar_fecha_termino(id):
                 'current_version': ot.version,
             }), 409
 
-        if raw_value:
-            try:
-                new_date = date.fromisoformat(raw_value)
-            except ValueError:
-                return jsonify({'success': False, 'error': 'La fecha debe tener formato AAAA-MM-DD.'}), 400
-            if ot.fecha_iniciado and new_date < ot.fecha_iniciado:
-                return jsonify({'success': False, 'error': 'La fecha de término no puede ser anterior al inicio.'}), 400
-        else:
-            new_date = None
+        if not raw_value:
+            return jsonify({
+                'success': False,
+                'error': 'La fecha de término es obligatoria.',
+            }), 400
+        try:
+            new_date = date.fromisoformat(raw_value)
+        except ValueError:
+            return jsonify({'success': False, 'error': 'La fecha debe tener formato AAAA-MM-DD.'}), 400
+        if ot.fecha_iniciado and new_date < ot.fecha_iniciado:
+            return jsonify({'success': False, 'error': 'La fecha de término no puede ser anterior al inicio.'}), 400
 
         ot.fecha_termino = new_date
         ot.incrementar_version()
@@ -813,6 +859,7 @@ def _build_tracking_summary(ot_id):
     )
     packing_list_ids = [packing_list.id for packing_list in packing_lists]
     components_by_pl = {packing_list_id: [] for packing_list_id in packing_list_ids}
+    normalized_personnel = {}
     if packing_list_ids:
         all_components = (
             ComponenteOT.query.filter(ComponenteOT.pl_id.in_(packing_list_ids))
@@ -821,6 +868,37 @@ def _build_tracking_summary(ot_id):
         )
         for component in all_components:
             components_by_pl[component.pl_id].append(component)
+        component_ids = [component.id for component in all_components]
+        if component_ids:
+            assignments = (
+                AsignacionPersonalProceso.query
+                .join(
+                    AvanceElementoProceso,
+                    AsignacionPersonalProceso.avance_id
+                    == AvanceElementoProceso.id,
+                )
+                .filter(
+                    AvanceElementoProceso.componente_id.in_(component_ids)
+                )
+                .all()
+            )
+            for assignment in assignments:
+                progress = assignment.avance
+                if (
+                    progress is None
+                    or progress.proceso is None
+                    or assignment.personal is None
+                ):
+                    continue
+                normalized_personnel.setdefault(
+                    progress.componente_id,
+                    [],
+                ).append((
+                    progress.proceso.codigo,
+                    assignment.personal.nombre,
+                    progress.fecha_inicio,
+                    progress.fecha_fin,
+                ))
     process_ratios = {process[0]: [] for process in TRACKING_PROCESSES}
     personnel = {}
     lots = []
@@ -848,7 +926,19 @@ def _build_tracking_summary(ot_id):
                 if ratio is not None:
                     process_ratios[key].append((ratio * 100.0, component.cantidad))
 
-            for process_key, operator_name in _operator_assignments(component.operario):
+            personnel_rows = normalized_personnel.get(component.id)
+            if not personnel_rows:
+                personnel_rows = [
+                    (
+                        process_key,
+                        operator_name,
+                        component.fecha_inicio_real,
+                        component.fecha_termino_real or component.fecha_realizacion,
+                    )
+                    for process_key, operator_name
+                    in _operator_assignments(component.operario)
+                ]
+            for process_key, operator_name, process_start, process_end in personnel_rows:
                 operator_key = operator_name.casefold()
                 entry = personnel.setdefault(operator_key, {
                     'name': operator_name,
@@ -865,15 +955,12 @@ def _build_tracking_summary(ot_id):
                     'description': component.descripcion or 'Sin descripción registrada',
                     'lot': packing_list.nombre,
                     'start_date': (
-                        component.fecha_inicio_real.isoformat()
-                        if component.fecha_inicio_real else None
+                        process_start.isoformat()
+                        if process_start else None
                     ),
                     'end_date': (
-                        component.fecha_termino_real.isoformat()
-                        if component.fecha_termino_real else (
-                            component.fecha_realizacion.isoformat()
-                            if component.fecha_realizacion else None
-                        )
+                        process_end.isoformat()
+                        if process_end else None
                     ),
                     'process_keys': set(),
                 })
