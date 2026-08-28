@@ -507,7 +507,6 @@ let editingOtVersion = null;
 
 function openModal(mode, btn = null) {
     modal.classList.add('active'); setTimeout(() => modalContent.style.transform = 'scale(1)', 10);
-    document.getElementById('inputModo').value = mode;
 
     if (mode === 'create') {
         editingOtVersion = null;
@@ -531,11 +530,16 @@ function openModal(mode, btn = null) {
             const parts = data.fecha_iniciado.split('/');
             if (parts.length === 3) document.getElementById('inputFecha').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
         }
+        if (data.fecha_termino && data.fecha_termino !== '-') {
+            const parts = data.fecha_termino.split('/');
+            if (parts.length === 3) document.getElementById('inputFechaTermino').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
         let estadoSelect = document.getElementById('inputEstado');
         for (let i = 0; i < estadoSelect.options.length; i++) {
             if (estadoSelect.options[i].value.toLowerCase() === data.estado.toLowerCase()) { estadoSelect.selectedIndex = i; break; }
         }
     }
+    document.getElementById('inputModo').value = mode;
 }
 
 function closeModal() {
@@ -545,6 +549,10 @@ function closeModal() {
 async function submitOT(e) {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
+    if (data.fecha_termino < data.fecha_iniciado) {
+        mostrarAlerta('La fecha de término no puede ser anterior a la fecha de inicio.', 'error');
+        return;
+    }
     if (data.modo === 'edit') data.expected_version = editingOtVersion;
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 

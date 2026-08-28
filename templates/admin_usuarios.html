@@ -8,43 +8,23 @@
 {% endblock %}
 
 {% block content %}
-{% set role_labels = {'admin': 'Administrador', 'editor': 'Editor', 'viewer': 'Lector'} %}
 <div class="tsm-page space-y-4">
-    <section class="tsm-page-header flex-col items-start lg:flex-row lg:items-center">
-        <div class="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div class="flex min-w-0 items-start gap-4">
-                <div class="tsm-page-icon">
-                    <span class="material-symbols-rounded text-[25px]">manage_accounts</span>
-                </div>
-                <div class="min-w-0">
-                    <p class="tsm-kicker">Administración de usuarios</p>
-                    <h1 class="tsm-page-title mt-1">Gestión de accesos</h1>
-                    <p class="tsm-page-subtitle mt-1 max-w-3xl">
-                        Administra las cuentas, sus perfiles de operación y el estado de acceso.
-                    </p>
-                </div>
-            </div>
-
-            <div class="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap">
-                <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}" class="tsm-button tsm-button-secondary flex-1 whitespace-nowrap sm:flex-none">
-                    <span class="material-symbols-rounded text-[17px]">arrow_back</span>
-                    Catálogo de OTs
-                </a>
-                <button type="button" class="tsm-button tsm-button-primary flex-1 whitespace-nowrap sm:flex-none" data-open-create-user>
-                    <span class="material-symbols-rounded text-[17px]">person_add</span>
-                    Nuevo usuario
-                </button>
-            </div>
-        </div>
-    </section>
+    <div class="tsm-compact-actions">
+        <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}" class="tsm-button tsm-button-secondary whitespace-nowrap">
+            <span class="material-symbols-rounded text-[17px]">arrow_back</span>Catálogo de OTs
+        </a>
+        <button type="button" class="tsm-button tsm-button-primary whitespace-nowrap" data-open-create-user>
+            <span class="material-symbols-rounded text-[17px]">person_add</span>Nuevo usuario
+        </button>
+    </div>
 
     <section class="grid grid-cols-2 gap-2.5 md:grid-cols-5">
         {% for label, value, icon, color in [
             ('Usuarios', stats.total, 'group', 'text-blue-700'),
             ('Activos', stats.active, 'verified_user', 'text-emerald-600'),
             ('Administradores', stats.admins, 'shield_person', 'text-slate-700'),
-            ('Editores', stats.editors, 'edit_note', 'text-orange-600'),
-            ('Lectores', stats.viewers, 'visibility', 'text-indigo-600')
+            ('Producción oficina', stats.office, 'edit_note', 'text-orange-600'),
+            ('Producción planta', stats.plant, 'visibility', 'text-indigo-600')
         ] %}
         <div class="flex min-h-[64px] items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
             <span class="material-symbols-rounded text-[20px] {{ color }}">{{ icon }}</span>
@@ -111,7 +91,9 @@
                             </div>
                         </td>
                         <td class="text-center">
-                            <span class="access-role access-role--{{ user.rol }}">{{ role_labels[user.rol] }}</span>
+                            <div class="access-role-list">
+                            {% for role in user.roles %}<span class="access-role">{{ role.nombre }}</span>{% else %}<span class="access-role">Sin rol V2</span>{% endfor %}
+                            </div>
                         </td>
                         <td class="text-center">
                             <span class="access-status {% if user.activo %}access-status--active{% else %}access-status--blocked{% endif %}">
@@ -126,7 +108,7 @@
                                 data-action="{{ url_for('admin_bp.actualizar_usuario', user_id=user.id) }}"
                                 data-name="{{ user.nombre }}"
                                 data-username="{{ user.username }}"
-                                data-role="{{ user.rol }}"
+                                data-roles="{{ user.roles|map(attribute='clave')|join(',') }}"
                                 data-active="{{ '1' if user.activo else '0' }}"
                                 data-locked="{{ '1' if user.id == current_user.id else '0' }}"
                             >
@@ -183,12 +165,10 @@
                 <input id="new-username" name="username" type="text" minlength="3" maxlength="50" pattern="[a-z0-9._-]+" required autocomplete="off" class="access-control lowercase">
             </div>
             <div class="sm:col-span-2">
-                <label for="new-role" class="access-field-label">Perfil de acceso</label>
-                <select id="new-role" name="rol" required class="access-control">
-                    <option value="viewer">Lector — solo consulta</option>
-                    <option value="editor">Editor — operación productiva</option>
-                    <option value="admin">Administrador — control total</option>
-                </select>
+                <span class="access-field-label">Roles funcionales</span>
+                <div class="access-role-grid">
+                    {% for role in roles %}<label><input type="checkbox" name="roles" value="{{ role.clave }}" {% if role.clave == 'produccion_planta' %}checked{% endif %}><span><strong>{{ role.nombre }}</strong><small>{{ role.descripcion or 'Acceso por permisos del módulo.' }}</small></span></label>{% endfor %}
+                </div>
             </div>
             <div>
                 <label for="new-password" class="access-field-label">Contraseña temporal</label>
@@ -214,7 +194,6 @@
 <dialog id="edit-user-dialog" class="access-dialog" aria-labelledby="edit-user-title">
     <form id="edit-user-form" method="post" class="access-dialog-card">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input id="edit-role-locked" type="hidden">
         <input id="edit-active-locked" type="hidden">
 
         <header class="access-dialog-header">
@@ -237,15 +216,13 @@
                 <label for="edit-username" class="access-field-label">Usuario</label>
                 <input id="edit-username" name="username" type="text" minlength="3" maxlength="50" pattern="[a-z0-9._-]+" required autocomplete="off" class="access-control lowercase">
             </div>
-            <div>
-                <label for="edit-role" class="access-field-label">Perfil</label>
-                <select id="edit-role" name="rol" class="access-control">
-                    <option value="viewer">Lector</option>
-                    <option value="editor">Editor</option>
-                    <option value="admin">Administrador</option>
-                </select>
+            <div class="sm:col-span-2">
+                <span class="access-field-label">Roles funcionales</span>
+                <div class="access-role-grid" id="edit-role-grid">
+                    {% for role in roles %}<label><input type="checkbox" name="roles" value="{{ role.clave }}" data-edit-role><span><strong>{{ role.nombre }}</strong><small>{{ role.descripcion or 'Acceso por permisos del módulo.' }}</small></span></label>{% endfor %}
+                </div>
             </div>
-            <div>
+            <div class="sm:col-span-2">
                 <label for="edit-active" class="access-field-label">Estado</label>
                 <select id="edit-active" name="activo" class="access-control">
                     <option value="1">Activo</option>

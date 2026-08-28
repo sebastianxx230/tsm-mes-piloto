@@ -4,12 +4,11 @@
     const editForm = document.getElementById('edit-user-form');
     const editName = document.getElementById('edit-name');
     const editUsername = document.getElementById('edit-username');
-    const editRole = document.getElementById('edit-role');
+    const editRoles = Array.from(document.querySelectorAll('[data-edit-role]'));
     const editActive = document.getElementById('edit-active');
     const editPassword = document.getElementById('edit-password');
     const editCaption = document.getElementById('edit-user-caption');
     const editLockNote = document.getElementById('edit-lock-note');
-    const lockedRole = document.getElementById('edit-role-locked');
     const lockedActive = document.getElementById('edit-active-locked');
     const searchInput = document.getElementById('user-search');
     const emptySearch = document.getElementById('users-empty-search');
@@ -57,7 +56,10 @@
             editUsername.value = button.dataset.username;
             editPassword.value = '';
             editCaption.textContent = '@' + button.dataset.username;
-            configureLockedField(editRole, lockedRole, button.dataset.role, locked);
+            const assignedRoles = new Set((button.dataset.roles || '').split(',').filter(Boolean));
+            editRoles.forEach(function (field) {
+                field.checked = assignedRoles.has(field.value);
+            });
             configureLockedField(editActive, lockedActive, button.dataset.active, locked);
             editLockNote.classList.toggle('hidden', !locked);
             editLockNote.classList.toggle('flex', locked);

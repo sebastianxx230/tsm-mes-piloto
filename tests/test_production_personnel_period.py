@@ -1,7 +1,11 @@
 from datetime import date
 
 from db_config import db
-from models.produccion import ComponenteOT, PersonalProduccion
+from models.produccion import (
+    AsignacionPersonalProceso,
+    ComponenteOT,
+    PersonalProduccion,
+)
 
 
 def test_personnel_directory_normalizes_names_and_assignments(
@@ -46,6 +50,10 @@ def test_personnel_directory_normalizes_names_and_assignments(
 
     with app.app_context():
         assert PersonalProduccion.query.count() == 1
+        assignment = AsignacionPersonalProceso.query.one()
+        assert assignment.avance.componente_id == ids['component']
+        assert assignment.avance.proceso.codigo == 'hab'
+        assert assignment.personal.nombre == 'Álvaro Pérez'
         component = db.session.get(ComponenteOT, ids['component'])
         assert component.operario == 'hab:Álvaro Pérez'
 
@@ -91,7 +99,7 @@ def test_import_defaults_new_manufacturing_processes_to_not_applicable(
             component.gal_real,
             component.are_real,
             component.pin_real,
-        } == {-1}
+        } == {None}
         assert component.des_real == 0
         assert component.fecha_realizacion == date(2026, 6, 18)
         component_without_date = ComponenteOT.query.filter_by(

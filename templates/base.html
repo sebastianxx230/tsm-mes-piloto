@@ -27,6 +27,7 @@
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/estilos.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/mes.css') }}?v=1.2.0">
 
     {% block head_extra %}{% endblock %}
 </head>
@@ -37,7 +38,7 @@
     {% if not hide_header %}
     <header class="sticky top-0 z-50 border-b border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
 
-        <div class="mx-auto flex h-[76px] w-full max-w-[1500px] items-center justify-between px-5 sm:px-7 lg:px-9">
+        <div class="mx-auto flex h-[76px] w-full max-w-[1760px] items-center justify-between px-5 sm:px-7 lg:px-9">
 
             <div class="flex min-w-0 items-center gap-4 sm:gap-5">
                 <a href="{{ url_for('gestion_ot_bp.catalogo_ot') }}"
@@ -80,30 +81,44 @@
             <div class="flex items-center gap-3">
                 {% if current_user.is_authenticated %}
                 <div class="relative" id="user-menu-container">
+                    {% set active_header_roles = current_user.roles|selectattr('activo')|list %}
+                    {% set header_role_labels = {
+                        'administrador_sistema': 'Administrador',
+                        'produccion_oficina': 'Producción',
+                        'produccion_planta': 'Planta',
+                        'almacen': 'Almacén',
+                        'planeamiento': 'Planeamiento',
+                        'calidad': 'Calidad',
+                        'logistica': 'Logística',
+                        'comercial': 'Comercial'
+                    } %}
+                    {% set primary_header_role = active_header_roles[0] if active_header_roles else none %}
 
                     <button type="button"
                             onclick="toggleUserMenu()"
                             aria-label="Abrir menú de usuario"
                             aria-expanded="false"
                             id="user-menu-button"
-                            class="flex w-full items-center justify-center gap-2.5 rounded-md border border-transparent px-2 py-1.5 transition-all hover:border-slate-200 hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100">
+                            class="flex w-full items-center justify-center gap-2 rounded-md border border-transparent px-1.5 py-1 transition-all hover:border-slate-200 hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100">
 
-                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-[#0f172a] text-white shadow-sm">
-                            <span class="material-symbols-rounded text-[20px]">person</span>
+                        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-[#0f172a] text-white shadow-sm">
+                            <span class="material-symbols-rounded text-[18px]">person</span>
                         </div>
 
-                        <div class="mt-1 hidden max-w-[180px] flex-col text-left md:flex">
+                        <div class="hidden max-w-[150px] flex-col text-left md:flex">
                         <span class="truncate text-[12px] font-bold leading-none text-slate-800">
                             {{ current_user.nombre }}
                         </span>
 
-                            <span class="mt-1 text-[10px] font-medium capitalize text-slate-400">
-                            {{ current_user.rol }}
+                            <span class="mt-1 flex max-w-[150px] items-center gap-1 truncate whitespace-nowrap text-[9px] font-medium text-slate-400"
+                                  title="{{ active_header_roles|map(attribute='nombre')|join(' · ') or current_user.rol|capitalize }}">
+                            <span class="truncate">{{ header_role_labels.get(primary_header_role.clave, primary_header_role.nombre) if primary_header_role else current_user.rol|capitalize }}</span>
+                            {% if active_header_roles|length > 1 %}<small class="shrink-0 text-[8px] font-bold">+{{ active_header_roles|length - 1 }}</small>{% endif %}
                         </span>
                         </div>
 
                         <span id="user-menu-arrow"
-                              class="material-symbols-rounded hidden text-[18px] text-slate-400 transition-transform md:block">
+                              class="material-symbols-rounded hidden text-[16px] text-slate-400 transition-transform lg:block">
                         expand_more
                     </span>
                     </button>
@@ -117,7 +132,7 @@
                             Mi perfil
                         </a>
 
-                        {% if current_user.rol == 'admin' %}
+                        {% if current_user.has_permission('users.manage') %}
                         <a href="{{ url_for('admin_bp.usuarios') }}"
                            class="flex h-9 items-center gap-3 rounded-md px-3 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-blue-50 hover:text-[#0056b3]">
                             <span class="material-symbols-rounded text-[18px]">admin_panel_settings</span>
@@ -141,9 +156,13 @@
             </div>
         </div>
     </header>
+
+    {% if current_user.is_authenticated and not hide_module_navigation %}
+        {% include '_mes_navigation.html' %}
+    {% endif %}
     {% endif %}
 
-    <main class="mx-auto w-full max-w-[1500px] flex-1 {% if not hide_header %}px-4 pb-12 pt-4 sm:px-6 lg:px-8{% endif %}">
+    <main class="mx-auto w-full max-w-[1760px] flex-1 {% if not hide_header %}px-4 pb-12 pt-4 sm:px-6 lg:px-7{% endif %}">
         {% block content %}{% endblock %}
     </main>
 

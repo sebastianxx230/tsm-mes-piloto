@@ -25,6 +25,7 @@ from extensions import limiter
 from models.catalogo_ot import CatalogoOT
 from models.produccion import ComponenteOT, PackingList
 from models.usuario import Usuario
+from utils.production_schema import reset_production_schema_state
 
 
 @pytest.fixture()
@@ -37,6 +38,7 @@ def app():
     limiter.reset()
 
     with flask_app.app_context():
+        reset_production_schema_state()
         db.drop_all()
         db.create_all()
 
@@ -56,6 +58,7 @@ def app():
             ot='2026-TEST',
             cliente='Cliente de prueba',
             fecha_iniciado=date(2026, 7, 30),
+            fecha_termino=date(2026, 9, 30),
             descripcion='OT para pruebas de seguridad',
             estado='En Proceso',
         )
@@ -87,6 +90,7 @@ def app():
     with flask_app.app_context():
         db.session.remove()
         db.drop_all()
+        reset_production_schema_state()
     limiter.reset()
 
 

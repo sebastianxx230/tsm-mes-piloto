@@ -14,7 +14,7 @@ from extensions import limiter
 from flask import Blueprint, current_app, jsonify, render_template, request
 from flask_login import current_user, login_required
 from flask_limiter.util import get_remote_address
-from utils.auth import roles_required
+from utils.auth import permission_required
 
 try:
     from PIL import Image, ImageOps, UnidentifiedImageError
@@ -149,25 +149,137 @@ def image_dimensions_are_allowed(image):
     )
 
 
+def _drive_credential_missing_fields(credential_data):
+    if not isinstance(credential_data, dict):
+        return ['credentials_object']
+    required_fields = {
+        'type',
+        'client_email',
+        'private_key',
+        'token_uri',
+    }
+    missing_fields = sorted(
+        field for field in required_fields if not credential_data.get(field)
+    )
+    if credential_data.get('type') != 'service_account':
+        missing_fields.append('type=service_account')
+    return missing_fields
+
+
+def _split_drive_credential_data():
+    """Admite credenciales separadas cuando un proveedor altera el JSON."""
+    values = {
+        'type': 'service_account',
+        'project_id': os.environ.get(
+            'GOOGLE_SERVICE_ACCOUNT_PROJECT_ID',
+            '',
+        ).strip(),
+        'private_key_id': os.environ.get(
+            'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID',
+            '',
+        ).strip(),
+        'private_key': os.environ.get(
+            'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
+            '',
+        ).strip(),
+        'client_email': os.environ.get(
+            'GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL',
+            '',
+        ).strip(),
+        'client_id': os.environ.get(
+            'GOOGLE_SERVICE_ACCOUNT_CLIENT_ID',
+            '',
+        ).strip(),
+        'token_uri': os.environ.get(
+            'GOOGLE_SERVICE_ACCOUNT_TOKEN_URI',
+            '',
+        ).strip(),
+    }
+    return values if any(values[key] for key in values if key != 'type') else None
+
+
+def _load_drive_credential_data():
+    """Carga la primera credencial completa y omite fuentes parciales."""
+    candidates = []
+    credentials_base64 = os.environ.get(
+        'GOOGLE_CREDENTIALS_BASE64',
+        '',
+    ).strip()
+    if credentials_base64:
+        try:
+            decoded = base64.b64decode(
+                credentials_base64,
+                validate=True,
+            ).decode('utf-8-sig')
+            candidates.append(('base64', json.loads(decoded, strict=False)))
+        except (
+            binascii.Error,
+            UnicodeDecodeError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+        ):
+            current_app.logger.error('google_credentials_base64_invalid')
+
+    credentials_json = os.environ.get('GOOGLE_CREDENTIALS', '').strip()
+    if credentials_json:
+        try:
+            candidates.append(
+                ('json', json.loads(credentials_json, strict=False)),
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            current_app.logger.error('google_credentials_json_invalid')
+
+    split_data = _split_drive_credential_data()
+    if split_data:
+        candidates.append(('split_env', split_data))
+
+    configured_path = os.environ.get(
+        'GOOGLE_APPLICATION_CREDENTIALS',
+        '',
+    ).strip()
+    base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+    credentials_path = configured_path or os.path.join(
+        base_dir,
+        'credentials.json',
+    )
+    if os.path.isfile(credentials_path):
+        try:
+            with open(credentials_path, 'r', encoding='utf-8-sig') as file:
+                candidates.append(('file', json.load(file)))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            current_app.logger.exception('google_credentials_file_invalid')
+
+    incomplete_sources = []
+    for source, credential_data in candidates:
+        missing_fields = _drive_credential_missing_fields(credential_data)
+        if missing_fields:
+            incomplete_sources.append(
+                f'{source}:{"|".join(missing_fields)}',
+            )
+            continue
+
+        credential_data = dict(credential_data)
+        credential_data['private_key'] = str(
+            credential_data['private_key']
+        ).replace('\\n', '\n')
+        return credential_data
+
+    if incomplete_sources:
+        current_app.logger.error(
+            'google_credentials_incomplete sources=%s',
+            ','.join(incomplete_sources),
+        )
+    else:
+        current_app.logger.error('google_credentials_missing')
+    return None
+
+
 def get_drive_service():
     try:
-        credentials_json = os.environ.get('GOOGLE_CREDENTIALS')
-        if credentials_json:
-            credential_data = json.loads(credentials_json, strict=False)
-            if 'private_key' in credential_data:
-                credential_data['private_key'] = credential_data[
-                    'private_key'
-                ].replace('\\n', '\n')
-        else:
-            base_dir = os.path.abspath(
-                os.path.dirname(os.path.dirname(__file__))
-            )
-            credentials_path = os.path.join(base_dir, 'credentials.json')
-            if not os.path.exists(credentials_path):
-                current_app.logger.error('google_credentials_missing')
-                return None
-            with open(credentials_path, 'r', encoding='utf-8-sig') as file:
-                credential_data = json.load(file)
+        credential_data = _load_drive_credential_data()
+        if credential_data is None:
+            return None
 
         credentials = (
             google.oauth2.service_account.Credentials.from_service_account_info(
@@ -736,7 +848,7 @@ def _prepare_report_image(image, already_cropped=False):
 
 @reporte_bp.route('/reporte/seleccionar/<int:ot_id>')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('reports.generate')
 def seleccionar_fotos_reporte(ot_id):
     ot = db.session.get(CatalogoOT, ot_id)
     if ot is None:
@@ -813,7 +925,7 @@ def seleccionar_fotos_reporte(ot_id):
 
 @reporte_bp.get('/reporte/api/fotos/<int:ot_id>/conteo')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('reports.generate')
 def api_conteo_fotos_drive(ot_id):
     ot = db.session.get(CatalogoOT, ot_id)
     if ot is None:
@@ -859,7 +971,7 @@ def api_conteo_fotos_drive(ot_id):
 
 @reporte_bp.get('/reporte/api/fotos/<int:ot_id>')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('reports.generate')
 def api_obtener_fotos_drive(ot_id):
     ot = db.session.get(CatalogoOT, ot_id)
     if ot is None:
@@ -907,7 +1019,7 @@ def api_obtener_fotos_drive(ot_id):
 
 @reporte_bp.post('/reporte/generar')
 @login_required
-@roles_required('admin', 'editor')
+@permission_required('reports.generate')
 @limiter.limit(
     REPORT_RATE_LIMIT,
     methods=['POST'],

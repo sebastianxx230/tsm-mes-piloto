@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 import controllers.reporte_fotografico_controller as report_controller
 from app import _classify_database_error, _normalize_database_url
 from db_config import db
@@ -118,6 +120,13 @@ def test_database_url_normalizes_common_dashboard_pastes():
     assert _normalize_database_url('sqlite:///test.sqlite') == 'sqlite:///test.sqlite'
 
 
+def test_database_url_rejects_documentation_placeholder():
+    with pytest.raises(ValueError, match='valores de ejemplo'):
+        _normalize_database_url(
+            'postgresql://app_user:password@host-pooler:5432/neondb?sslmode=require'
+        )
+
+
 def test_database_error_classification_does_not_expose_details():
     assert _classify_database_error(
         RuntimeError('password authentication failed for user "example"')
@@ -162,7 +171,16 @@ def test_ot_payload_is_fully_validated(client, login):
             'ot': '<script>',
             'cliente': 'Cliente',
             'fecha_iniciado': '2026-07-30',
+            'fecha_termino': '2026-08-30',
             'descripcion': '',
+            'estado': 'En Proceso',
+        },
+        {
+            'modo': 'create',
+            'ot': '2026-0100',
+            'cliente': 'Cliente',
+            'fecha_iniciado': '2026-07-30',
+            'descripcion': 'Sin fecha de término',
             'estado': 'En Proceso',
         },
         {
@@ -170,6 +188,7 @@ def test_ot_payload_is_fully_validated(client, login):
             'ot': '2026-0100',
             'cliente': '',
             'fecha_iniciado': '2026-02-30',
+            'fecha_termino': '2026-03-30',
             'descripcion': '',
             'estado': 'Finalizada',
         },
@@ -191,6 +210,7 @@ def test_duplicate_ot_is_rejected(client, login):
         'ot': '2026-TEST',
         'cliente': 'Cliente',
         'fecha_iniciado': '2026-07-30',
+        'fecha_termino': '2026-08-30',
         'descripcion': '',
         'estado': 'En Proceso',
     })
@@ -206,13 +226,16 @@ def test_valid_ot_can_be_created(app, client, login):
         'ot': '2026-0100',
         'cliente': 'Cliente válido',
         'fecha_iniciado': '2026-07-30',
+        'fecha_termino': '2026-08-30',
         'descripcion': 'Estructura de prueba',
         'estado': 'No Empezado',
     })
 
     assert response.status_code == 200
     with app.app_context():
-        assert CatalogoOT.query.filter_by(ot='2026-0100').one().cliente == 'Cliente válido'
+        created = CatalogoOT.query.filter_by(ot='2026-0100').one()
+        assert created.cliente == 'Cliente válido'
+        assert created.fecha_termino.isoformat() == '2026-08-30'
 
 
 def test_catalog_uses_dynamic_lima_date(client, login):

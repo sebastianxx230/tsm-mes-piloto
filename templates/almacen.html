@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Almacén{% endblock %}
+{% block page_title %}Almacén{% endblock %}
+
+{% block content %}
+<div class="mes-page warehouse-page">
+    {% if selected_work_order %}
+    <div class="warehouse-v3-toolbar">
+        <a class="tsm-button tsm-button-secondary" href="{{ url_for('mes_bp.almacen') }}">
+            <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
+            Volver a órdenes
+        </a>
+        <div class="warehouse-v3-toolbar-actions">
+            {% if current_user.has_permission('messages.view') %}
+            <button id="warehouse-chat-trigger" class="tsm-button tsm-button-secondary" type="button" aria-controls="warehouse-chat-drawer" aria-expanded="false">
+                <span class="material-symbols-rounded" aria-hidden="true">forum</span>
+                Mensajes
+            </button>
+            {% endif %}
+            <a class="tsm-button tsm-button-primary" href="{{ url_for('gestion_ot_bp.produccion', id=selected_work_order.item) }}">Abrir producción</a>
+        </div>
+    </div>
+
+    <section class="warehouse-context-bar" aria-label="Contexto de la orden seleccionada">
+        <div class="warehouse-context-cell is-ot">
+            <span>OT seleccionada</span>
+            <strong>{{ selected_work_order.ot }}</strong>
+        </div>
+        <div class="warehouse-context-cell">
+            <span>Cliente</span>
+            <strong>{{ selected_work_order.cliente }}</strong>
+        </div>
+        <div class="warehouse-context-cell is-structure">
+            <span>Estructura</span>
+            <strong title="{{ selected_work_order.descripcion or 'Sin descripción' }}">{{ selected_work_order.descripcion or 'Sin descripción' }}</strong>
+        </div>
+        <div class="warehouse-context-cell is-date">
+            <span>Inicio</span>
+            <strong>{{ selected_work_order.fecha_iniciado.strftime('%d/%m/%Y') if selected_work_order.fecha_iniciado else 'Sin fecha' }}</strong>
+        </div>
+        <div class="warehouse-context-cell is-date">
+            <span>Término</span>
+            <strong>{{ selected_work_order.fecha_termino.strftime('%d/%m/%Y') if selected_work_order.fecha_termino else 'Sin fecha' }}</strong>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="warehouse-metrics" aria-label="Resumen de almacén">
+        {% for key, label, value, detail, color in [
+            ('requirements', 'Requerimientos', warehouse_kpis.requirements, 'Ítems importados', 'primary'),
+            ('pending', 'Pendientes', warehouse_kpis.pending, 'Sin gestionar', 'warning'),
+            ('in-purchase', 'En compra', warehouse_kpis.in_purchase, 'Compra en curso', 'blue'),
+            ('purchased', 'Comprados', warehouse_kpis.purchased, 'Pendientes de ingreso', 'neutral'),
+            ('available', 'Disponibles', warehouse_kpis.available, 'En almacén', 'success'),
+            ('not-purchased', 'No comprados', warehouse_kpis.not_purchased, 'Requieren revisión', 'danger'),
+            ('dispatched', 'Despachados', warehouse_kpis.dispatched, 'Salida registrada', 'neutral')
+        ] %}
+        <article class="warehouse-metric is-{{ color }}">
+            <span>{{ label }}</span>
+            <strong id="warehouse-kpi-{{ key }}">{{ value }}</strong>
+            <small>{{ detail }}</small>
+        </article>
+        {% endfor %}
+    </section>
+
+    <section class="mes-panel warehouse-panel">
+        {% if selected_work_order %}
+        <header class="warehouse-toolbar is-detail">
+            <div>
+                <p class="mes-eyebrow">Matriz de abastecimiento</p>
+                <h2>Pernería importada del Packing List</h2>
+            </div>
+            <div class="warehouse-detail-tools">
+                <label class="warehouse-order-search" for="warehouse-supply-search">
+                    <span class="material-symbols-rounded" aria-hidden="true">search</span>
+                    <input id="warehouse-supply-search" type="search" autocomplete="off" placeholder="Buscar código o descripción">
+                </label>
+                <form method="get" class="warehouse-state-filter">
+                    <input type="hidden" name="ot" value="{{ selected_work_order.item }}">
+                    <label class="sr-only" for="warehouse-state-filter">Estado del material</label>
+                    <select id="warehouse-state-filter" name="estado" onchange="this.form.submit()">
+                        <option value="">Todos los estados</option>
+                        {% for state in supply_states %}
+                        <option value="{{ state }}" {{ 'selected' if selected_state == state else '' }}>{{ state }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+                <span class="warehouse-result-count"><span id="warehouse-supply-count">{{ supplies|length }}</span> registros</span>
+            </div>
+        </header>
+
+        {% if supplies %}
+        <div class="mes-table-wrap">
+            <table class="mes-table warehouse-table">
+                <thead><tr><th>Packing List / Site</th><th>Código</th><th>Categoría</th><th>Descripción</th><th>Requerido</th><th>Peso</th><th>Estado</th></tr></thead>
+                <tbody>
+                {% for item in supplies %}
+                <tr data-supply-row data-supply-state="{{ item.state }}" data-search="{{ item.code }} {{ item.description }} {{ item.pl }} {{ item.site }}" data-component-id="{{ item.id }}" data-packing-list-id="{{ item.pl_id }}" data-packing-list-version="{{ item.pl_version }}">
+                    <td><strong>{{ item.pl }}</strong><small>{{ item.site }}</small></td>
+                    <td><strong>{{ item.code }}</strong></td>
+                    <td><span class="mes-category is-{{ item.category|lower }}">{{ item.subcategory }}</span></td>
+                    <td>{{ item.description }}</td>
+                    <td><strong>{{ '{:g}'.format(item.quantity) }}</strong> {{ item.unit }}</td>
+                    <td>{{ '{:,.2f}'.format(item.weight_kg) }} kg</td>
+                    <td>
+                        {% if current_user.has_permission('warehouse.movements.create') %}
+                        <select class="warehouse-state-select" aria-label="Estado de {{ item.code }}" data-current="{{ item.state }}">
+                            {% for state in supply_states %}<option value="{{ state }}" {{ 'selected' if item.state == state else '' }}>{{ state }}</option>{% endfor %}
+                        </select>
+                        {% else %}
+                        <span class="mes-status">{{ item.state }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="mes-empty warehouse-search-empty" id="warehouse-supply-search-empty" hidden>
+            <strong>No se encontraron requerimientos</strong>
+            <p>Prueba con otro código o una palabra de la descripción.</p>
+        </div>
+        {% else %}
+        <div class="mes-empty"><strong>No hay requerimientos con este estado</strong><p>Cambia el filtro para revisar los demás materiales de la OT.</p></div>
+        {% endif %}
+
+        {% else %}
+        <header class="warehouse-toolbar">
+            <div>
+                <p class="mes-eyebrow">Órdenes con pernería importada</p>
+                <h2>Selecciona una OT</h2>
+            </div>
+            <div class="warehouse-catalog-tools">
+                <label class="warehouse-order-search" for="warehouse-order-search">
+                    <span class="material-symbols-rounded" aria-hidden="true">search</span>
+                    <input id="warehouse-order-search" type="search" autocomplete="off" placeholder="Buscar por OT, cliente o estructura">
+                </label>
+                <span class="warehouse-result-count"><span id="warehouse-order-count">{{ warehouse_orders|length }}</span> órdenes</span>
+            </div>
+        </header>
+
+        {% if warehouse_orders %}
+        <div class="mes-table-wrap">
+            <table class="mes-table warehouse-orders-table">
+                <thead><tr><th>OT</th><th>Cliente / estructura</th><th>PL</th><th>Requerimientos</th><th>Pendientes</th><th>En compra</th><th>Comprados</th><th>No comprados</th><th>Disponibles</th><th>Despachados</th><th></th></tr></thead>
+                <tbody>
+                {% for order in warehouse_orders %}
+                <tr class="warehouse-order-row" data-search="{{ order.ot }} {{ order.cliente }} {{ order.description }}">
+                    <td><strong>{{ order.ot }}</strong></td>
+                    <td><strong>{{ order.cliente }}</strong><small>{{ order.description }}</small></td>
+                    <td>{{ order.packing_lists }}</td>
+                    <td>{{ order.requirements }}</td>
+                    <td>{{ order.pending }}</td>
+                    <td>{{ order.in_purchase }}</td>
+                    <td>{{ order.purchased }}</td>
+                    <td class="{{ 'warehouse-danger-value' if order.not_purchased else '' }}">{{ order.not_purchased }}</td>
+                    <td>{{ order.available }}</td>
+                    <td>{{ order.dispatched }}</td>
+                    <td><a class="warehouse-open-order" href="{{ url_for('mes_bp.almacen', ot=order.ot_id) }}">Abrir OT</a></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="mes-empty warehouse-search-empty" id="warehouse-search-empty" hidden>
+            <strong>No se encontraron órdenes</strong>
+            <p>Prueba con el número de OT, el cliente o una palabra de la estructura.</p>
+        </div>
+        {% else %}
+        <div class="mes-empty"><strong>Aún no hay pernería importada</strong><p>La pernería aparecerá aquí al guardar el Packing List completo desde Producción.</p></div>
+        {% endif %}
+        {% endif %}
+    </section>
+
+    {% if selected_work_order and current_user.has_permission('messages.view') %}
+    <div id="warehouse-chat-overlay" class="warehouse-chat-overlay" hidden></div>
+    <aside id="warehouse-chat-drawer" class="warehouse-chat-drawer" role="dialog" aria-modal="true" aria-labelledby="warehouse-chat-title" aria-hidden="true">
+        <header class="warehouse-chat-header">
+            <div>
+                <span>Conversación de la orden</span>
+                <h2 id="warehouse-chat-title">Mensajes</h2>
+                <p>{{ selected_work_order.ot }} · compartido con Producción</p>
+            </div>
+            <button id="warehouse-chat-close" type="button" aria-label="Cerrar mensajes">×</button>
+        </header>
+        <div id="warehouse-chat-history" class="warehouse-chat-history" role="log" aria-live="polite">
+            <p class="warehouse-chat-loading">Cargando mensajes…</p>
+        </div>
+        {% if current_user.has_permission('messages.write') %}
+        <form id="warehouse-chat-form" class="warehouse-chat-composer">
+            <label for="warehouse-chat-input">Nuevo mensaje</label>
+            <div>
+                <textarea id="warehouse-chat-input" rows="1" maxlength="500" placeholder="Escribe un mensaje para esta OT"></textarea>
+                <button type="submit">Enviar</button>
+            </div>
+            <p>La conversación es la misma en Producción y Almacén.</p>
+        </form>
+        {% else %}
+        <div class="warehouse-chat-readonly">Conversación en modo de solo lectura</div>
+        {% endif %}
+    </aside>
+    <script>
+        window.WarehouseConfig = {{ {
+            'otId': selected_work_order.item,
+            'currentUserId': current_user.get_id()|int,
+            'canWriteMessages': current_user.has_permission('messages.write')
+        }|tojson }};
+    </script>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/almacen.js') }}?v=2.3.0"></script>
+{% endblock %}

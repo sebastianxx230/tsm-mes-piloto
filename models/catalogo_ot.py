@@ -18,13 +18,17 @@ class CatalogoOT(db.Model):
         db.Index('ix_catalogo_ot_estado', 'estado'),
         db.Index('ix_catalogo_ot_archivado', 'archivado'),
         db.CheckConstraint('version >= 1', name='ck_catalogo_ot_version_positive'),
+        db.CheckConstraint(
+            'fecha_termino >= fecha_iniciado',
+            name='ck_catalogo_ot_periodo_programado',
+        ),
     )
 
     item = db.Column(db.Integer, primary_key=True)
     ot = db.Column(db.String(50), unique=True, nullable=False)
     cliente = db.Column(db.String(100), nullable=False)
     fecha_iniciado = db.Column(db.Date, nullable=False)
-    fecha_termino = db.Column(db.Date, nullable=True)
+    fecha_termino = db.Column(db.Date, nullable=False)
     descripcion = db.Column(db.Text)
     estado = db.Column(db.String(30), default='En Proceso')
     version = db.Column(db.Integer, nullable=False, default=1, server_default='1')

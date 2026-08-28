@@ -42,6 +42,7 @@ def test_work_order_edit_detects_stale_version(client, login):
         'ot': '2026-TEST',
         'cliente': 'Cliente actualizado',
         'fecha_iniciado': '2026-07-30',
+        'fecha_termino': '2026-09-30',
         'descripcion': 'Cambio válido',
         'estado': 'En Proceso',
         'expected_version': 1,

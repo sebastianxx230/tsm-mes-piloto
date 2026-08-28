@@ -215,7 +215,52 @@ def test_admin_uploads_photo_to_fotografias(
     assert invalidated == [ids['ot']]
 
 
-def test_drive_uploads_remain_admin_only(client, login, ids):
+def test_production_office_can_upload_drive_evidence(
+    client,
+    login,
+    ids,
+    monkeypatch,
+):
+    folder = {
+        'ot_folder_id': 'ot-folder',
+        'ot_folder_name': 'OT_2026-TEST',
+        'category_folder_id': 'category-folder',
+        'category_folder_name': 'EVIDENCIA',
+    }
+    monkeypatch.setattr(drive_controller, 'get_drive_service', lambda: object())
+    monkeypatch.setattr(document_controller, 'get_drive_service', lambda: object())
+    monkeypatch.setattr(
+        drive_controller,
+        'ensure_ot_category_folder',
+        lambda *_args: folder,
+    )
+    monkeypatch.setattr(
+        document_controller,
+        'ensure_ot_category_folder',
+        lambda *_args: folder,
+    )
+    monkeypatch.setattr(
+        drive_controller,
+        'upload_drive_file',
+        lambda _service, folder_id, filename, mime_type, content: {
+            'id': 'editor-photo',
+            'name': filename,
+            'mimeType': mime_type,
+            'size': str(len(content)),
+            'parents': [folder_id],
+        },
+    )
+    monkeypatch.setattr(
+        document_controller,
+        'upload_drive_file',
+        lambda _service, folder_id, filename, mime_type, content: {
+            'id': 'editor-document',
+            'name': filename,
+            'mimeType': mime_type,
+            'size': str(len(content)),
+            'parents': [folder_id],
+        },
+    )
     login('editor')
 
     photo_response = client.post(
@@ -229,5 +274,5 @@ def test_drive_uploads_remain_admin_only(client, login, ids):
         content_type='multipart/form-data',
     )
 
-    assert photo_response.status_code == 403
-    assert document_response.status_code == 403
+    assert photo_response.status_code == 201
+    assert document_response.status_code == 201
